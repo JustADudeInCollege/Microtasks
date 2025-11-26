@@ -1,0 +1,679 @@
+<script lang="ts">
+  import { onMount, tick } from 'svelte';
+  import { page } from '$app/stores';
+  // import type { Timestamp } from 'firebase/firestore'; // Not strictly needed if not creating Timestamps on client
+
+  import { enhance } from '$app/forms';
+  import { slide, scale, fly, fade } from 'svelte/transition';
+  import { quintOut } from 'svelte/easing';
+  import { goto, invalidateAll } from '$app/navigation';
+  import { browser } from '$app/environment';
+
+  // Define TaskForFrontend locally to match server structure
+  interface TaskForFrontend {
+    id: string;
+    title: string;
+    description: string;
+    isCompleted: boolean;
+    status: 'pending' | 'complete' | 'incomplete' | 'late';
+    priority: string | number | null;
+    createdAtISO: string | null;
+    dueDateISO: string | null; // Essential for calendar (YYYY-MM-DD)
+    dueTime: string | null;    // This is the deadline time (HH:MM)
+    color?: string;
+  }
+
+  // Props from server load function
+  export let data: {
+    user?: { name?: string };
+    tasks: TaskForFrontend[]; 
+    error?: string;
+  };
+
+  let isSidebarOpen = false;
+  let username = "";
+  let greeting = "GOOD DAY";
+  let formActionError: string | null = null;
+  let pageError: string | null = data.error || null;
+  let isDarkMode = false;
+  
+  // isCreateOpen is removed as the accordion is from the old sidebar
+  // let isCreateOpen = false; 
+
+  let currentYear = new Date().getFullYear();
+  let currentMonth = new Date().getMonth(); // 0-indexed
+
+  interface CalendarEvent {
+    id: string;
+    title: string;
+    description?: string;
+    color?: string; 
+    deadlineTime?: string; // Display for the deadline time (from task.dueTime)
+  }
+
+  interface Day {
+    dayNum: number;
+    events: CalendarEvent[];
+    isCurrentMonth: boolean;
+    isToday: boolean;
+    date: Date; 
+  }
+  let daysInMonth: Day[] = [];
+  let isLoadingCalendar = true;
+
+  let showEventForm = false;
+  let editingEventId: string | null = null;
+  let eventTitle = "";
+  let eventDescription = "";
+  let eventDate: string | null = null; // For the form input type="date", format<y_bin_46>YYYY-MM-DD
+  let eventDueTime: string | null = null; // For the "Deadline Time" input, maps to task.dueTime
+  let eventColor: string = '#3B82F6'; 
+
+  const dropdownIds = ['notifWindow', 'helpWindow', 'profileWindow'];
+
+  async function updateCalendarDays() {
+    isLoadingCalendar = true;
+    await tick(); 
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0); 
+
+    const newDaysInMonth: Day[] = [];
+    
+    const firstDateOfMonth = new Date(currentYear, currentMonth, 1);
+    const startingDayOfWeek = firstDateOfMonth.getDay();
+    const daysInCurrentActualMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+    const prevMonthEndDate = new Date(currentYear, currentMonth, 0); 
+    const daysInPrevMonth = prevMonthEndDate.getDate();
+
+    for (let i = 0; i < startingDayOfWeek; i++) {
+        const dayNum = daysInPrevMonth - startingDayOfWeek + 1 + i;
+        const date = new Date(currentYear, currentMonth - 1, dayNum);
+        date.setHours(0,0,0,0); 
+        newDaysInMonth.push({ dayNum, events: [], isCurrentMonth: false, isToday: date.getTime() === today.getTime(), date });
+    }
+
+    for (let i = 1; i <= daysInCurrentActualMonth; i++) {
+        const currentDateObj = new Date(currentYear, currentMonth, i);
+        currentDateObj.setHours(0,0,0,0); 
+        const isTodayFlag = currentDateObj.getTime() === today.getTime();
+        
+        let eventsForThisDay: CalendarEvent[] = [];
+
+        if (data.tasks && Array.isArray(data.tasks)) {
+            data.tasks.forEach(task => {
+                if (task.dueDateISO) {
+                    const [taskYear, taskMonth, taskDay] = task.dueDateISO.split('-').map(Number);
+                    if (taskYear === currentDateObj.getFullYear() &&
+                        (taskMonth - 1) === currentDateObj.getMonth() && // JS month is 0-indexed
+                        taskDay === currentDateObj.getDate()) {
+                        eventsForThisDay.push({
+                            id: task.id,
+                            title: task.title,
+                            description: task.description,
+                            deadlineTime: task.dueTime || undefined, // Use task's dueTime as deadlineTime
+                            color: task.color || '#10B981', 
+                        });
+                    }
+                }
+            });
+        }
+
+        if (isTodayFlag && today.getDay() === 4) { // 4 for Thursday
+            const thursdaySpecialEvents: CalendarEvent[] = [
+                { id: 'today_thu_evt1', title: 'Project Deadline Meeting', deadlineTime: '11:30 AM', color: '#EF4444' },
+                { id: 'today_thu_evt2', title: 'System Security Update', deadlineTime: '04:00 PM', color: '#F59E0B' },
+            ];
+            const existingTitles = new Set(eventsForThisDay.map(e => e.title));
+            thursdaySpecialEvents.forEach(tse => {
+                if (!existingTitles.has(tse.title)) { 
+                    eventsForThisDay.push(tse);
+                }
+            });
+        }
+
+        newDaysInMonth.push({
+            dayNum: i,
+            events: eventsForThisDay,
+            isCurrentMonth: true,
+            isToday: isTodayFlag,
+            date: currentDateObj
+        });
+    }
+
+    const totalCells = Math.ceil(newDaysInMonth.length / 7) * 7; 
+    let nextMonthDayCounter = 1;
+    while(newDaysInMonth.length < totalCells) {
+        const date = new Date(currentYear, currentMonth + 1, nextMonthDayCounter);
+        date.setHours(0,0,0,0); 
+        newDaysInMonth.push({ dayNum: nextMonthDayCounter, events: [], isCurrentMonth: false, isToday: date.getTime() === today.getTime(), date });
+        nextMonthDayCounter++;
+    }
+    daysInMonth = newDaysInMonth;
+    // updateSidebarTodayEvents(); // Removed as this section is no longer in the sidebar
+    isLoadingCalendar = false;
+  }
+
+  function prevMonth() {
+    currentMonth--;
+    if (currentMonth < 0) { currentMonth = 11; currentYear--; }
+    updateCalendarDays();
+  }
+
+  function nextMonth() {
+    currentMonth++;
+    if (currentMonth > 11) { currentMonth = 0; currentYear++; }
+    updateCalendarDays();
+  }
+
+  function toggleDarkMode() {
+    isDarkMode = !isDarkMode;
+    if (browser) {
+      document.body.classList.toggle('dark', isDarkMode);
+      localStorage.setItem('theme', isDarkMode ? 'dark' : 'light');
+    }
+  }
+  function toggleSidebar() { isSidebarOpen = !isSidebarOpen; }
+  
+  function openAddEventForm(dayDateObj?: Date) {
+    showEventForm = true;
+    editingEventId = null;
+    eventTitle = "";
+    eventDescription = "";
+    formActionError = null; 
+    
+    const dateToUse = dayDateObj || new Date(); 
+    const year = dateToUse.getFullYear();
+    const month = (dateToUse.getMonth() + 1).toString().padStart(2, '0');
+    const day = dateToUse.getDate().toString().padStart(2, '0');    
+    eventDate = `${year}-${month}-${day}`; 
+    
+    eventDueTime = null; 
+    eventColor = '#3B82F6'; 
+  }
+
+  function closeEventForm() { showEventForm = false; }
+  function closeSidebar() { isSidebarOpen = false; }
+  
+  function toggleWindow(id: string) {
+    const el = document.getElementById(id);
+    if (el) el.classList.toggle('hidden');
+  }
+  function closeOtherWindows(currentId: string) {
+    dropdownIds.forEach(id => {
+      if (id !== currentId) {
+        document.getElementById(id)?.classList.add('hidden');
+      }
+    });
+  }
+
+  const eventFormEnhanceCallback = () => {
+    formActionError = null; 
+    return async ({ result, update }: { result: any, update: any }) => {
+      if (result.type === 'success' ) {
+        closeEventForm();
+        await invalidateAll(); 
+        await tick(); 
+      } else if (result.type === 'failure') {
+        console.error("Form submission failure:", result.data);
+        if (result.data?.eventForm?.error) {
+            formActionError = result.data.eventForm.error;
+        } else {
+            formActionError = 'Failed to process event. Please try again.';
+        }
+      } else if (result.type === 'error') { 
+        console.error("Form submission error:", result.error);
+        formActionError = result.error?.message || 'An unexpected error occurred.';
+      }
+      await update({ reset: false }); 
+    };
+  };
+
+  const handleEscKey = (event: KeyboardEvent) => {
+    if (event.key === 'Escape') {
+      if (showEventForm) closeEventForm();
+      if (isSidebarOpen) closeSidebar();
+    }
+  };
+
+  function getStoredUsername(): string { return browser ? localStorage.getItem('microtask_username') || "User" : "User"; }
+  function getGreeting() {
+    const hour = new Date().getHours();
+    if (hour < 12) return "GOOD MORNING";
+    if (hour < 18) return "GOOD AFTERNOON";
+    return "GOOD EVENING";
+  }
+  function handleLogout() {
+    if (browser) {
+      localStorage.removeItem('microtask_username');
+      document.cookie = "userId=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; SameSite=Lax;";
+      goto('/login'); 
+    }
+  }
+
+  // sidebarTodayEvents and its update function are removed as the new sidebar doesn't use them.
+  // let sidebarTodayEvents: CalendarEvent[] = []; 
+  // function updateSidebarTodayEvents() { ... }
+  
+  $: if (data && browser) {
+      username = data.user?.name || getStoredUsername(); 
+      pageError = data.error || null; 
+      updateCalendarDays();
+  }
+
+  onMount(() => {
+    console.log('[Calendar Page / +page.svelte] Component Mounted');
+    
+    if (!data.user?.name) username = getStoredUsername(); 
+    greeting = getGreeting();
+
+    if (browser) {
+      const savedTheme = localStorage.getItem('theme');
+      isDarkMode = savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      document.body.classList.toggle('dark', isDarkMode);
+
+      const setupIconListener = (iconId: string, windowId: string) => {
+        const iconElement = document.getElementById(iconId);
+        if (iconElement) {
+          iconElement.addEventListener('click', (e) => {
+            e.stopPropagation();
+            toggleWindow(windowId);
+            closeOtherWindows(windowId);
+          });
+        }
+      };
+      setupIconListener('bellIcon', 'notifWindow');
+      setupIconListener('helpIcon', 'helpWindow');
+      setupIconListener('profileIcon', 'profileWindow');
+      
+      const darkModeButton = document.getElementById('darkModeToggle');
+      if (darkModeButton) darkModeButton.addEventListener('click', toggleDarkMode);
+    }
+    
+    const handleGlobalClick = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      const sidebar = document.getElementById('sidebar');
+      const hamburgerButton = document.getElementById('hamburgerButton');
+
+      if (sidebar && !sidebar.contains(target) && hamburgerButton && !hamburgerButton.contains(target) && isSidebarOpen) {
+        closeSidebar();
+      }
+      
+      let isClickInsideDropdownTrigger = false;
+      const triggerIds = ['bellIcon', 'helpIcon', 'profileIcon'];
+      triggerIds.forEach(triggerId => {
+        const triggerEl = document.getElementById(triggerId);
+        if (triggerEl && triggerEl.contains(target)) {
+            isClickInsideDropdownTrigger = true;
+        }
+      });
+
+      let isClickInsideDropdownWindow = false;
+       dropdownIds.forEach(windowId => {
+        const windowEl = document.getElementById(windowId);
+        if (windowEl && windowEl.contains(target)) {
+            isClickInsideDropdownWindow = true;
+        }
+      });
+
+      if (!isClickInsideDropdownTrigger && !isClickInsideDropdownWindow) {
+        closeOtherWindows('');
+      }
+    };
+
+    document.addEventListener('click', handleGlobalClick);
+    document.addEventListener('keydown', handleEscKey);
+    const intervalId = setInterval(() => { greeting = getGreeting(); }, 60000);
+
+    return () => {
+      clearInterval(intervalId);
+      document.removeEventListener('click', handleGlobalClick);
+      document.removeEventListener('keydown', handleEscKey);
+    };
+  });
+
+</script>
+
+<div class={`flex h-screen font-sans ${isDarkMode ? 'dark bg-zinc-900 text-zinc-300' : 'bg-gray-100 text-gray-800'}`}>
+  {#if pageError && !formActionError}
+    <div class="fixed top-4 right-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded shadow-md z-[100]" role="alert" transition:fade>
+      <strong class="font-bold">Error:</strong> <span class="block sm:inline">{pageError}</span>
+      <button on:click={() => pageError = null} class="absolute top-0 bottom-0 right-0 px-4 py-3" aria-label="Close error">
+        <span class="text-xl">×</span>
+      </button>
+    </div>
+  {/if}
+
+  {#if isSidebarOpen}
+    <div
+      id="sidebar"
+      class={`fixed top-0 left-0 h-full w-64 shadow-lg z-50 flex flex-col justify-between p-4 border-r ${isDarkMode ? 'bg-zinc-800 border-zinc-700' : 'bg-white border-gray-200'}`}
+      transition:fly={{ x: -300, duration: 300, easing: quintOut }}
+    >
+      <div>
+        <div class="flex items-center gap-2 mb-8 pb-4 border-b ${isDarkMode ? 'border-zinc-700' : 'border-gray-200'}"> 
+          <img src="/logonamin.png" alt="Logo" class="w-8 h-8" />
+          <h1 class={`text-xl font-bold ${isDarkMode ? 'text-zinc-100' : 'text-gray-800'}`}>Microtask</h1>
+        </div>
+        <nav class="flex flex-col gap-2"> 
+          <a href="/home" 
+             class={`flex items-center gap-3 px-3 py-2 rounded-md font-semibold transition-colors duration-150 
+                    ${$page.url.pathname === '/home' ? (isDarkMode ? 'bg-blue-800 text-white' : 'bg-blue-600 text-white') : (isDarkMode ? 'text-zinc-300 hover:bg-zinc-700' : 'text-gray-700 hover:bg-gray-100')}`}
+          >
+            <img src="/Home.png" alt="Dashboard" class="w-5 h-5" />
+            <span>Dashboard</span>
+          </a>
+          <a href="/tasks" 
+             class={`flex items-center gap-3 px-3 py-2 rounded-md font-semibold transition-colors duration-150 
+                    ${$page.url.pathname === '/tasks' ? (isDarkMode ? 'bg-blue-800 text-white' : 'bg-blue-600 text-white') : (isDarkMode ? 'text-zinc-300 hover:bg-zinc-700' : 'text-gray-700 hover:bg-gray-100')}`}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" 
+                 class={`w-5 h-5 ${$page.url.pathname === '/tasks' ? 'stroke-white' : (isDarkMode ? 'stroke-zinc-300' : 'stroke-gray-700')}`}>
+              <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 0 0 2.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 0 0-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 0 0 .75-.75 2.25 2.25 0 0 0-.1-.664m-5.8 0A2.251 2.251 0 0 1 13.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25ZM6.75 12h.008v.008H6.75V12Zm0 3h.008v.008H6.75V15Zm0 3h.008v.008H6.75V18Z" />
+            </svg>
+            <span>My Tasks</span>
+          </a>
+          <a href="/calendar" 
+             class={`flex items-center gap-3 px-3 py-2 rounded-md font-semibold transition-colors duration-150 
+                    ${$page.url.pathname === '/calendar' ? (isDarkMode ? 'bg-blue-800 text-white' : 'bg-blue-600 text-white') : (isDarkMode ? 'text-zinc-300 hover:bg-zinc-700' : 'text-gray-700 hover:bg-gray-100')}`}
+          >
+            <img src="/Calendar.png" alt="Calendar" class="w-5 h-5" />
+            <span>Calendar</span>
+          </a>
+          <a href="/ai-chat" 
+             class={`flex items-center gap-3 px-3 py-2 rounded-md font-semibold transition-colors duration-150 
+                    ${$page.url.pathname === '/ai-chat' ? (isDarkMode ? 'bg-blue-800 text-white' : 'bg-blue-600 text-white') : (isDarkMode ? 'text-zinc-300 hover:bg-zinc-700' : 'text-gray-700 hover:bg-gray-100')}`}
+          >
+            <img src="/Ai.png" alt="Ask Synthia" class="w-5 h-5" />
+            <span>Ask Synthia</span>
+          </a>
+        </nav>
+      </div>
+      <button on:click={handleLogout} 
+              class={`flex items-center gap-3 px-3 py-2 rounded-md font-semibold w-full mt-auto transition-colors duration-150 
+                     ${isDarkMode ? 'text-zinc-300 hover:bg-zinc-700' : 'text-gray-700 hover:bg-gray-100'}`}
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" 
+             class={`w-5 h-5 ${isDarkMode ? 'stroke-zinc-300' : 'stroke-gray-700'}`}>
+          <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15m3 0 3-3m0 0-3-3m3 3H9" />
+        </svg>
+        <span>Log out</span>
+      </button>
+    </div>
+  {/if}
+
+  <div class="flex-1 flex flex-col overflow-hidden">
+    <header class={`top-header ${isDarkMode ? 'bg-zinc-800 border-zinc-700' : 'bg-white border-gray-200'}`}>
+      <div class="header-left">
+        <button id="hamburgerButton" class="menu-btn" on:click={toggleSidebar} aria-label="Toggle Sidebar">
+          <img src="/Hamburger.png" alt="Menu" class="w-6 h-6" />
+        </button>
+        <a href="/home" class="logo">
+          <img src="/logonamin.png" alt="Microtask Logo">
+          <span class={`${isDarkMode ? 'text-zinc-100' : 'text-gray-800'}`}>Microtask</span>
+        </a>
+      </div>
+      <div class="header-icons">
+        <div class="relative">
+          <button id="bellIcon" aria-label="Notifications"><img src="/Bell.png" alt="Notifications"></button>
+          <div id="notifWindow" class={`dropdown-window hidden ${isDarkMode ? 'bg-zinc-700 border-zinc-600 text-zinc-300' : 'bg-white border-gray-200 text-gray-700'}`}>
+            <h3 class="font-semibold mb-2 text-sm">Notifications</h3><p class="text-xs">No new notifications.</p>
+          </div>
+        </div>
+        <div class="relative">
+          <button id="helpIcon" aria-label="Help & FAQ"><img src="/Question.png" alt="FAQ"></button>
+          <div id="helpWindow" class={`dropdown-window hidden ${isDarkMode ? 'bg-zinc-700 border-zinc-600 text-zinc-300' : 'bg-white border-gray-200 text-gray-700'}`}>
+            <h3 class="font-semibold mb-2 text-sm">FAQ</h3>
+            <ul class="list-disc list-inside space-y-1 text-xs"><li>How do I add a task?</li><li>Where is the calendar?</li></ul>
+            <a href="/support" class="text-xs text-blue-600 hover:underline mt-2 block">Visit Support</a>
+          </div>
+        </div>
+        <div class="relative">
+          <button id="profileIcon" aria-label="Profile Menu"><img src="/Profile.png" alt="Profile"></button>
+          <div id="profileWindow" class={`dropdown-window hidden ${isDarkMode ? 'bg-zinc-700 border-zinc-600 text-zinc-300' : 'bg-white border-gray-200 text-gray-700'}`}>
+            <h3 class="font-semibold mb-2 text-sm">Profile</h3>
+            <p class="text-xs mb-2 truncate">Welcome, {username || 'User'}!</p>
+            <a href="/settings" class={`block text-xs px-2 py-1.5 rounded w-full text-left mb-1 transition-colors duration-150 ${isDarkMode ? 'bg-zinc-600 hover:bg-zinc-500 text-zinc-300' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}>Settings</a>
+            <button on:click={handleLogout} class={`text-xs px-2 py-1.5 rounded w-full text-left transition-colors duration-150 ${isDarkMode ? 'bg-red-700 hover:bg-red-600 text-zinc-300' : 'bg-red-100 hover:bg-red-200 text-red-700'}`}>Logout</button>
+          </div>
+        </div>
+        <button id="darkModeToggle" aria-label="Toggle Dark Mode" class={`ml-2 p-1.5 rounded-full transition-colors duration-150 ${isDarkMode ? 'hover:bg-zinc-700 text-zinc-300' : 'hover:bg-gray-100 text-gray-700'}`}>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5">
+            {#if isDarkMode} <path fill-rule="evenodd" d="M9.528 1.718a.75.75 0 0 0-.103.103l1.132 1.132a.75.75 0 0 0 1.06 0l1.132-1.132a.75.75 0 0 0-.103-1.06l-1.132-1.132a.75.75 0 0 0-1.06 0L9.63 1.615a.75.75 0 0 0-.102.103ZM12 3.75a.75.75 0 0 1 .75.75v1.5a.75.75 0 0 1-1.5 0v-1.5a.75.75 0 0 1 .75-.75ZM18.282 5.282a.75.75 0 0 0-1.06 0l-1.132 1.132a.75.75 0 0 0 .103 1.06l1.132 1.132a.75.75 0 0 0 1.06 0l1.132-1.132a.75.75 0 0 0-.103-1.06l-1.132-1.132a.75.75 0 0 0 0-.103ZM19.5 12a.75.75 0 0 1-.75.75h-1.5a.75.75 0 0 1 0-1.5h1.5a.75.75 0 0 1 .75.75ZM18.282 18.718a.75.75 0 0 0 0 1.06l1.132 1.132a.75.75 0 0 0 1.06 0l1.132-1.132a.75.75 0 0 0-.103-1.06l-1.132-1.132a.75.75 0 0 0-1.06 0l-1.132 1.132a.75.75 0 0 0 .103.103ZM12 18.75a.75.75 0 0 1-.75.75h-1.5a.75.75 0 0 1 0-1.5h1.5a.75.75 0 0 1 .75.75ZM5.718 18.718a.75.75 0 0 0 1.06 0l1.132-1.132a.75.75 0 0 0-.103-1.06l-1.132-1.132a.75.75 0 0 0-1.06 0L4.586 17.686a.75.75 0 0 0 .103 1.06l1.132 1.132a.75.75 0 0 0 0 .103ZM4.5 12a.75.75 0 0 1 .75-.75h1.5a.75.75 0 0 1 0 1.5h-1.5a.75.75 0 0 1-.75-.75ZM5.718 5.282a.75.75 0 0 0 0-1.06l-1.132-1.132a.75.75 0 0 0-1.06 0L2.39 4.114a.75.75 0 0 0 .103 1.06l1.132 1.132a.75.75 0 0 0 1.06 0l1.132-1.132a.75.75 0 0 0-.103-.103ZM12 6.75a5.25 5.25 0 0 1 5.25 5.25 5.25 5.25 0 0 1-5.25 5.25 5.25 5.25 0 0 1-5.25-5.25 5.25 5.25 0 0 1 5.25-5.25Z" clip-rule="evenodd" />
+            {:else} <path fill-rule="evenodd" d="M10.5 3.75a6.75 6.75 0 1 0 0 13.5 6.75 6.75 0 0 0 0-13.5ZM12 16.5a4.5 4.5 0 1 1 0-9 4.5 4.5 0 0 1 0 9Z" clip-rule="evenodd" /> {/if}
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <div class="flex-1 overflow-y-auto pt-[60px] pb-4 flex flex-col">
+      <div class={`w-full px-4 sm:px-6 py-3 flex items-center justify-between gap-3 shadow-sm flex-shrink-0 border-b ${isDarkMode ? 'bg-zinc-800 text-zinc-100 border-zinc-700' : 'bg-white text-gray-800 border-gray-200'}`}>
+        <div class="flex items-center gap-3">
+            <img src="/Calendar.png" alt="Calendar" class="w-7 h-7"/>
+            <span class="text-lg sm:text-xl font-semibold">Calendar</span>
+        </div>
+        <button on:click={() => openAddEventForm()} class={`px-3 py-1.5 text-sm font-medium rounded-md flex items-center gap-2 transition-colors ${isDarkMode ? 'bg-blue-700 hover:bg-blue-600 text-white' : 'bg-blue-600 hover:bg-blue-700 text-white'}`}>
+            <img src="/Plus.png" alt="Add Event" class="w-4 h-4 filter-button-icon" />
+            Add Event
+        </button>
+      </div>
+      
+      <div class="px-4 sm:px-6 mt-4">
+        <h1 class={`text-xl sm:text-2xl font-semibold ${isDarkMode ? 'text-zinc-100' : 'text-gray-800'}`}>{greeting}, <span class={`${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`}>{username.toUpperCase()}</span>!</h1>
+        <p class={`text-sm mt-1 ${isDarkMode ? 'text-zinc-400' : 'text-gray-500'}`}>Here is your monthly schedule.</p>
+      </div>
+
+      <main class="px-4 sm:px-6 mt-4 flex-grow">
+        <div class={`calendar-container w-full p-2 sm:p-4 rounded-lg shadow ${isDarkMode ? 'bg-zinc-800 border border-zinc-700' : 'bg-white border border-gray-200'}`}>
+            <div class="flex justify-between items-center mb-4 px-1">
+                <button on:click={prevMonth} aria-label="Previous Month" class={`p-2 rounded-md transition-colors ${isDarkMode ? 'hover:bg-zinc-700 text-zinc-300' : 'hover:bg-gray-100 text-gray-600'}`}>
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+                </button>
+                <h2 class={`text-lg sm:text-xl font-semibold ${isDarkMode ? 'text-zinc-100' : 'text-gray-800'}`}>
+                    {new Date(currentYear, currentMonth).toLocaleString('default', { month: 'long' })} {currentYear}
+                </h2>
+                <button on:click={nextMonth} aria-label="Next Month" class={`p-2 rounded-md transition-colors ${isDarkMode ? 'hover:bg-zinc-700 text-zinc-300' : 'hover:bg-gray-100 text-gray-600'}`}>
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                </button>
+            </div>
+
+            <div class={`grid grid-cols-7 gap-px text-center font-medium text-xs mb-1 ${isDarkMode ? 'text-zinc-400' : 'text-gray-500'}`}>
+                {#each ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as dayName}
+                    <div class="py-1 hidden sm:block">{dayName.toUpperCase()}</div>
+                    <div class="py-1 sm:hidden">{dayName[0]}</div>
+                {/each}
+            </div>
+
+            <div class="grid grid-cols-7 gap-px">
+                {#if isLoadingCalendar && daysInMonth.length === 0}
+                     <div class="col-span-7 text-center py-10 flex justify-center items-center min-h-[300px]">
+                        <svg class={`animate-spin h-8 w-8 ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                     </div>
+                {:else if daysInMonth.length > 0}
+                    {#each daysInMonth as day (day.date.toISOString() + '-' + day.dayNum + '-' + day.events.map(e=>e.id + (e.deadlineTime || '')).join('-'))} <div 
+                            class={`p-1 sm:p-1.5 border min-h-[5rem] sm:min-h-[7rem] flex flex-col transition-colors duration-150 cursor-pointer relative group
+                                ${!day.isCurrentMonth ? (isDarkMode ? 'bg-zinc-850 border-zinc-750 text-zinc-600' : 'bg-gray-50 border-gray-100 text-gray-400') : (isDarkMode ? 'bg-zinc-750 border-zinc-700 hover:bg-zinc-700' : 'bg-white border-gray-200 hover:bg-gray-50')}
+                                ${day.isToday && day.isCurrentMonth ? (isDarkMode ? '!border-blue-500 ring-1 ring-blue-500 !bg-zinc-700' : '!border-blue-500 ring-1 ring-blue-500 !bg-blue-50') : ''}
+                            `}
+                            role="gridcell" aria-label={day.date.toDateString()}
+                            on:click={() => openAddEventForm(day.date)}
+                            tabindex="0"
+                            on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') openAddEventForm(day.date); }}
+                        >
+                            <span class={`text-xs sm:text-sm font-semibold mb-0.5 ${day.isToday && day.isCurrentMonth ? (isDarkMode ? 'text-blue-300' : 'text-blue-600') : ''} ${!day.isCurrentMonth ? 'opacity-60' : ''}`}>
+                                {day.dayNum}
+                            </span>
+                            {#if day.isCurrentMonth && day.events.length > 0}
+                                {@const maxEventsToShow = day.events.length > 2 ? 1 : 2} <ul class="mt-0.5 text-[0.6rem] sm:text-[0.7rem] space-y-0.5 overflow-hidden flex-grow">
+                                    {#each day.events.slice(0, maxEventsToShow) as event (event.id)}
+                                        <li class={`truncate p-0.5 sm:px-1 sm:py-0.5 rounded text-white leading-tight`} style="background-color: {event.color || (isDarkMode ? '#374151' : '#9CA3AF')};">
+                                            {event.title}
+                                            {#if event.deadlineTime}
+                                                <span class="block text-[0.55rem] sm:text-[0.6rem] opacity-80">DL: {event.deadlineTime}</span>
+                                            {/if}
+                                        </li>
+                                    {/each}
+                                    {#if day.events.length > maxEventsToShow}
+                                        <li class={`italic text-[0.55rem] sm:text-[0.65rem] mt-0.5 ${isDarkMode ? 'text-zinc-400' : 'text-gray-500'}`}>+{day.events.length - maxEventsToShow} more</li>
+                                    {/if}
+                                </ul>
+                            {/if}
+                             <button 
+                                on:click|stopPropagation={() => openAddEventForm(day.date)}
+                                class={`absolute bottom-1 right-1 p-0.5 sm:p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-150 focus:opacity-100 ${isDarkMode ? 'bg-blue-600 hover:bg-blue-500 text-white' : 'bg-blue-500 hover:bg-blue-600 text-white'}`}
+                                aria-label="Add event to this day"
+                            >
+                               <img src="/Plus.png" alt="Add" class="w-2.5 h-2.5 sm:w-3 sm:h-3 filter-button-icon" />
+                            </button>
+                        </div>
+                    {/each}
+                {:else if !isLoadingCalendar && daysInMonth.length === 0}
+                    <p class={`col-span-7 text-center py-10 ${isDarkMode ? 'text-zinc-400' : 'text-gray-500'}`}>No days to display for this month.</p>
+                {/if}
+            </div>
+        </div>
+      </main>
+      
+       <footer class={`text-center text-xs py-4 mt-auto ${isDarkMode ? 'text-zinc-500' : 'text-gray-400'}`}>
+            Microtask Calendar © {new Date().getFullYear()}
+       </footer>
+    </div>
+  </div>
+
+  {#if showEventForm}
+    <div
+      class="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-50 p-4 backdrop-blur-sm"
+      on:click|self={closeEventForm} transition:fade={{ duration: 150 }}
+    >
+      <div
+        class={`rounded-lg shadow-xl w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden ${isDarkMode ? 'bg-zinc-800 text-zinc-300' : 'bg-white text-gray-800'}`}
+        role="dialog" aria-modal="true" aria-labelledby="event-modal-title"
+        on:click|stopPropagation transition:scale={{ duration: 200, start: 0.95, opacity: 0.5 }}
+      >
+        <div class={`flex justify-between items-center p-4 sm:p-5 border-b flex-shrink-0 ${isDarkMode ? 'border-zinc-700' : 'border-gray-200'}`}>
+          <h3 id="event-modal-title" class="text-lg sm:text-xl font-semibold">
+            {editingEventId ? 'Edit Event' : 'Add Event'}
+          </h3>
+          <button type="button" class={`p-1 rounded-full focus:outline-none focus:ring-2 focus:ring-offset-2 transition-colors duration-150 ${isDarkMode ? 'text-zinc-400 hover:bg-zinc-700 focus:ring-zinc-600' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-600 focus:ring-gray-400'}`} on:click={closeEventForm} aria-label="Close">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
+          </button>
+        </div>
+
+        <form method="POST" action="?/addEvent" use:enhance={eventFormEnhanceCallback} class={`flex-grow flex flex-col overflow-y-auto p-4 sm:p-5 custom-scrollbar space-y-4`}>
+          {#if editingEventId} <input type="hidden" name="id" value={editingEventId} /> {/if}
+          <div>
+            <label for="event-title" class="block text-sm font-medium mb-1">Title <span class="text-red-500">*</span></label>
+            <input type="text" id="event-title" name="title" bind:value={eventTitle} class={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm ${isDarkMode ? 'bg-zinc-700 border-zinc-600 text-zinc-300 placeholder-zinc-500' : 'border-gray-300 text-gray-800 placeholder-gray-400'}`} required />
+          </div>
+          <div>
+            <label for="event-description" class="block text-sm font-medium mb-1">Description (Optional)</label>
+            <textarea id="event-description" name="description" bind:value={eventDescription} class={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm min-h-[80px] ${isDarkMode ? 'bg-zinc-700 border-zinc-600 text-zinc-300 placeholder-zinc-500' : 'border-gray-300 text-gray-800 placeholder-gray-400'}`} ></textarea>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label for="event-date" class="block text-sm font-medium mb-1">Date <span class="text-red-500">*</span></label>
+              <input type="date" id="event-date" name="eventDate" bind:value={eventDate} class={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm ${isDarkMode ? 'bg-zinc-700 border-zinc-600 text-zinc-300 calendar-picker-dark' : 'border-gray-300 text-gray-800'}`} required />
+            </div>
+             <div>
+              <label for="event-color" class="block text-sm font-medium mb-1">Color</label>
+              <input type="color" id="event-color" name="color" bind:value={eventColor} class={`w-full h-10 px-1 py-1 border rounded-md shadow-sm cursor-pointer ${isDarkMode ? 'bg-zinc-700 border-zinc-600' : 'border-gray-300'}`} />
+            </div>
+          </div>
+           <div class="grid grid-cols-1 sm:grid-cols-1 gap-4"> <div>
+              <label for="event-due-time" class="block text-sm font-medium mb-1">Deadline Time (Optional)</label>
+              <input type="time" id="event-due-time" name="dueTime" bind:value={eventDueTime} class={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm ${isDarkMode ? 'bg-zinc-700 border-zinc-600 text-zinc-300 calendar-picker-dark' : 'border-gray-300 text-gray-800'}`} />
+            </div>
+            </div>
+
+          {#if formActionError}
+            <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-2 rounded-md text-sm" role="alert">
+              {formActionError}
+            </div>
+          {/if}
+
+          <div class={`flex flex-col sm:flex-row justify-end gap-3 mt-auto pt-4 border-t -mx-4 -mb-4 sm:-mx-5 sm:-mb-5 px-4 py-3 sm:px-5 sm:py-3 rounded-b-lg flex-shrink-0 ${isDarkMode ? 'bg-zinc-700 border-zinc-600' : 'bg-gray-50 border-gray-200'}`}>
+            <button type="button" class={`w-full sm:w-auto px-4 py-2 rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 transition-colors duration-150 ${isDarkMode ? 'bg-zinc-600 text-zinc-300 hover:bg-zinc-500 focus:ring-zinc-500' : 'bg-gray-200 text-gray-800 hover:bg-gray-300 focus:ring-gray-400'}`} on:click={closeEventForm}> Cancel </button>
+            <button type="submit" class="w-full sm:w-auto px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-150"> {editingEventId ? 'Update Event' : 'Add Event'} </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  {/if}
+</div>
+
+<style>
+  .font-sans { font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  :global(body, html) { height: 100%; margin: 0; padding: 0; overflow: hidden; }
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 3px; }
+  ::-webkit-scrollbar-thumb { background: #c5c5c5; border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #a8a8a8; }
+  .custom-scrollbar { scrollbar-width: thin; scrollbar-color: #c5c5c5 #f1f1f1; }
+  :global(.dark) ::-webkit-scrollbar-track { background: #2d3748; }
+  :global(.dark) ::-webkit-scrollbar-thumb { background: #4a5568; }
+  :global(.dark) ::-webkit-scrollbar-thumb:hover { background: #718096; }
+  :global(.dark) .custom-scrollbar { scrollbar-color: #4a5568 #2d3748; }
+
+  .top-header { position: fixed; top: 0; left: 0; right: 0; display: flex; align-items: center; justify-content: space-between; padding: 0 1rem; height: 60px; z-index: 40; box-shadow: 0 1px 3px rgba(0,0,0,0.05); transition: background-color 0.2s, border-color 0.2s; }
+  .header-left { display: flex; align-items: center; gap: 0.75rem; }
+  .top-header .menu-btn { background: none; border: none; cursor: pointer; padding: 0.5rem; border-radius: 9999px; transition: background-color 0.15s ease; }
+  .top-header .menu-btn:hover { background-color: #f3f4f6; }
+  .dark .top-header .menu-btn:hover { background-color: #374151; }
+  .top-header .menu-btn img { width: 1.5rem; height: 1.5rem; display: block; }
+  .top-header .logo { display: flex; align-items: center; gap: 0.5rem; font-weight: 600; font-size: 1.125rem; text-decoration: none; }
+  .top-header .logo img { height: 2rem; width: auto; }
+  .top-header .header-icons { display: flex; align-items: center; gap: 0.25rem; }
+  .top-header .header-icons button { background: none; border: none; cursor: pointer; padding: 0.5rem; line-height: 0; display: flex; align-items: center; justify-content: center; border-radius: 9999px; width: 36px; height: 36px; transition: background-color 0.15s ease; }
+  .top-header .header-icons button:hover { background-color: #f3f4f6; }
+  .dark .top-header .header-icons button:hover { background-color: #374151; }
+  .top-header .header-icons img { height: 1.25rem; width: 1.25rem; opacity: 0.8; transition: opacity 0.15s ease; }
+  .top-header .header-icons button:hover img { opacity: 1; }
+  .relative { position: relative; }
+  .dropdown-window { position: absolute; right: 0; top: calc(100% + 8px); border-radius: 0.5rem; box-shadow: 0 4px 12px rgba(0,0,0,0.1); padding: 0.75rem; width: 260px; z-index: 50; opacity: 0; transform: translateY(-5px) scale(0.98); transition: opacity 0.15s ease-out, transform 0.15s ease-out; pointer-events: none; visibility: hidden; }
+  .dropdown-window:not(.hidden) { opacity: 1; transform: translateY(0) scale(1); pointer-events: auto; visibility: visible; }
+  .hidden { display: none !important; } 
+
+  :global(.dark .bg-zinc-800) { background-color: #1f2937; }
+  :global(.dark .border-zinc-700) { border-color: #374151; }
+  :global(.dark .text-zinc-100) { color: #f3f4f6; }
+  :global(.dark .text-zinc-300) { color: #d1d5db; }
+  :global(.dark .text-zinc-400) { color: #9ca3af; }
+  :global(.dark .text-zinc-500) { color: #6b7280; }
+  :global(.dark .text-zinc-600) { color: #4b5563; }
+
+  :global(.dark .bg-zinc-700) { background-color: #374151; }
+  :global(.dark .border-zinc-600) { border-color: #4b5563; }
+  :global(.dark .hover\:bg-zinc-700:hover) { background-color: #4b5563; }
+  :global(.dark .hover\:bg-zinc-600:hover) { background-color: #4b5563; }
+  :global(.dark .bg-zinc-600) { background-color: #4b5563; }
+  :global(.dark .bg-zinc-500) { background-color: #6b7280; }
+  :global(.dark .hover\:bg-zinc-500:hover) { background-color: #626f81; }
+
+
+  :global(.dark .bg-zinc-850) { background-color: #1a202c; } 
+  :global(.dark .border-zinc-750) { border-color: #2d3748; }
+  :global(.dark .bg-zinc-750) { background-color: #2d3748; }
+  
+  :global(.dark .calendar-picker-dark::-webkit-calendar-picker-indicator) {
+    filter: invert(0.8);
+  }
+  
+  .filter-button-icon {
+    filter: invert(1) brightness(100%); 
+  }
+
+  /* Ensuring active link icon color is white */
+  :global(a.bg-blue-600 svg), 
+  :global(a.bg-blue-800 svg) {
+    stroke: white !important;
+  }
+   :global(a.bg-blue-600 img), 
+  :global(a.bg-blue-800 img) {
+    filter: brightness(0) invert(1); /* This should make icons white */
+  }
+
+
+</style>

@@ -1,0 +1,1 @@
+import{s as u,g as t,a as l,i as o}from"./BRRr3SwI.js";function f(a){var r=l(0);return function(){return arguments.length===1?(u(r,t(r)+1),arguments[0]):(t(r),a())}}function v(a,r){var s;var e=(s=a.$$events)==null?void 0:s[r.type],n=o(e)?e.slice():e==null?[]:[e];for(var i of n)i.call(this,r)}export{v as b,f as r};
