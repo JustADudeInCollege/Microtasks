@@ -2,7 +2,10 @@ import { json, error as SvelteKitError } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
 import { adminDb, admin } from '$lib/server/firebaseAdmin.js'; // Import admin for messaging
 import type { SendResponse } from 'firebase-admin/messaging'; // Import type for SendResponse
-import { CRON_SECRET, APP_URL } from '$env/static/private';
+import { env } from '$env/dynamic/private';
+
+const CRON_SECRET = env.CRON_SECRET;
+const APP_URL = env.APP_URL;
 
 // Helper function to format a Date object to YYYY-MM-DD string
 function getFormattedDateString(date: Date): string {
