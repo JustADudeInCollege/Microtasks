@@ -661,15 +661,17 @@
             if (isSidebarOpen) closeSidebar();
         }
     }
+
+    function handleWindowClick(e: MouseEvent) {
+        const sortDropdown = document.getElementById('sortOptionsDropdown');
+        const sortButton = document.getElementById('sortButton');
+        if (showSortOptions && sortDropdown && !sortDropdown.contains(e.target as Node) && sortButton && !sortButton.contains(e.target as Node)) {
+            showSortOptions = false;
+        }
+    }
 </script>
 
-<svelte:window on:keydown={escKeyHandler} on:click={(e) => {
-    const sortDropdown = document.getElementById('sortOptionsDropdown');
-    const sortButton = document.getElementById('sortButton');
-    if (showSortOptions && sortDropdown && !sortDropdown.contains(e.target as Node) && sortButton && !sortButton.contains(e.target as Node)) {
-        showSortOptions = false;
-    }
-}} />
+<svelte:window on:keydown={escKeyHandler} on:click={handleWindowClick} />
 
 <form method="POST" action="?/deleteTask" use:enhance={handleSingleDeleteSubmitCb} bind:this={singleDeleteFormEl} style="display: none;">
     <input type="hidden" name="taskId" />
