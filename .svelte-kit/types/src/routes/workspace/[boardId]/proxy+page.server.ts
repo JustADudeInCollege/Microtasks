@@ -379,16 +379,15 @@ export const actions = {
         const priority = formData.get('priority')?.toString();
         const dueDate = formData.get('dueDate')?.toString();
         const dueTime = formData.get('dueTime')?.toString();
-        // boardId could also be updatable here if needed, e.g. to move task between boards
-        // const boardId = formData.get('boardId')?.toString()?.trim();
-
+        const isCompletedString = formData.get('isCompleted')?.toString();
 
         if (title === '') { // Check if title is explicitly empty
              return fail(400, { taskForm: { error: 'Task title cannot be empty.', taskId } });
         }
         
-        type TaskUpdatePayload = Partial<Omit<FetchedTaskData, 'lastModified'>> & {
+        type TaskUpdatePayload = Partial<Omit<FetchedTaskData, 'lastModified' | 'completedAt'>> & {
             lastModified: FieldValue;
+            completedAt?: FieldValue | null;
         };
 
         const taskUpdateData: TaskUpdatePayload = { 
@@ -398,28 +397,29 @@ export const actions = {
         if (title !== undefined) taskUpdateData.title = title;
         if (description !== undefined) taskUpdateData.description = description;
         if (priority !== undefined) taskUpdateData.priority = priority;
-        // if (boardId !== undefined && boardId.trim() !== '') taskUpdateData.boardId = boardId;
 
-
-        if (dueDate === null || dueDate === '' || dueDate === undefined) {
-            taskUpdateData.dueDate = null;
-            taskUpdateData.dueTime = null; 
-        } else if (dueDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
-            taskUpdateData.dueDate = dueDate;
-        } else if (dueDate !== undefined) { 
-            return fail(400, { taskForm: { error: 'Invalid due date format.', taskId } });
+        if (dueDate !== undefined) { // Only update if dueDate was provided in the form
+            if (dueDate === null || dueDate === '') {
+                taskUpdateData.dueDate = null;
+            } else if (dueDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                taskUpdateData.dueDate = dueDate;
+            } else {
+                return fail(400, { taskForm: { error: 'Invalid due date format.', taskId } });
+            }
         }
 
-        if (dueTime === null || dueTime === '' || dueTime === undefined || taskUpdateData.dueDate === null) {
-            if (taskUpdateData.dueDate === null && dueTime !== undefined) { 
-                 taskUpdateData.dueTime = null;
-            } else if (dueTime !== undefined) { 
+        if (dueTime !== undefined) { // Only update if dueTime was provided in the form
+            if (dueTime === null || dueTime === '') {
                 taskUpdateData.dueTime = null;
+            } else if (dueTime.match(/^\d{2}:\d{2}$/)) {
+                taskUpdateData.dueTime = dueTime;
+            } else {
+                return fail(400, { taskForm: { error: 'Invalid due time format.', taskId } });
             }
-        } else if (dueTime.match(/^\d{2}:\d{2}$/)) {
-            taskUpdateData.dueTime = dueTime;
-        } else if (dueTime !== undefined) { 
-            return fail(400, { taskForm: { error: 'Invalid due time format.', taskId } });
+        }
+        // If dueDate was explicitly set to null, ensure dueTime is also null
+        if (taskUpdateData.dueDate === null) {
+            taskUpdateData.dueTime = null;
         }
         
         try {
@@ -428,8 +428,29 @@ export const actions = {
             if (!taskDoc.exists) return fail(404, { taskForm: { error: 'Task not found.' } });
             if (taskDoc.data()?.userId !== userId) return fail(403, { taskForm: { error: 'Permission denied.' } });
             
+            // Handle isCompleted and completedAt
+            if (isCompletedString !== undefined) {
+                const newIsCompleted = isCompletedString === 'true';
+                taskUpdateData.isCompleted = newIsCompleted;
+                taskUpdateData.completedAt = newIsCompleted ? FieldValue.serverTimestamp() : null;
+            }
+
             await taskRef.update(taskUpdateData);
-            return { taskForm: { success: true, message: 'Task updated successfully!' } };
+            
+            // Re-fetch the task to get its current state after update
+            const updatedTaskDoc = await taskRef.get();
+            const updatedTaskData = updatedTaskDoc.data();
+
+            return { 
+                taskForm: { 
+                    success: true, 
+                    message: 'Task updated successfully!',
+                    taskId: taskId,
+                    isCompleted: updatedTaskData?.isCompleted,
+                    dueDateISO: updatedTaskData?.dueDate,
+                    dueTime: updatedTaskData?.dueTime
+                } 
+            };
         } catch (error: any) {
             console.error(`[Action updateTask /kanban] ERROR for task ${taskId}:`, error);
             return fail(500, { taskForm: { error: `Failed to update task: ${error.message}` } });

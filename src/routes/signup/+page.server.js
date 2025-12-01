@@ -83,6 +83,7 @@ export const actions = {
       await setDoc(userDocRef, {
         uid: uid, // Store uid explicitly as well, can be useful
         username: username,
+        usernameLower: username.toLowerCase(), // For case-insensitive login
         email: email
         // DO NOT store password here - Firebase Auth handles that securely.
       });

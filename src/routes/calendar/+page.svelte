@@ -10,6 +10,7 @@
   import type { TaskForFrontend } from '$lib/types/task'; // Import from types file
   import TaskPopover from '$lib/components/TaskPopover.svelte'; // Import new popover component
   import DayTasksModal from '$lib/components/DayTasksModal.svelte'; // Import new modal component
+  import AppHeader from '$lib/components/AppHeader.svelte';
 
   export let data: {
     user?: { name?: string };
@@ -261,12 +262,6 @@
       const savedTheme = localStorage.getItem('theme');
       isDarkMode = savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches);
       document.body.classList.toggle('dark', isDarkMode);
-      const setupIconListener = (iconId: string, windowId: string) => { const el = document.getElementById(iconId); if(el) el.addEventListener('click', (e) => { e.stopPropagation(); toggleWindow(windowId); closeOtherWindows(windowId); });};
-      setupIconListener('bellIcon', 'notifWindow');
-      setupIconListener('helpIcon', 'helpWindow');
-      setupIconListener('profileIcon', 'profileWindow');
-      const darkModeButton = document.getElementById('darkModeToggle');
-      if (darkModeButton) darkModeButton.addEventListener('click', toggleDarkMode);
       
       // Update date/time
       updateDateTime();
@@ -322,10 +317,6 @@
       document.removeEventListener('click', handleGlobalClick);
       // Remove keydown listener with useCapture = true
       document.removeEventListener('keydown', handleEscKey, true);
-      const bellIcon = document.getElementById('bellIcon'); if (bellIcon) bellIcon.onclick = null;
-      const helpIcon = document.getElementById('helpIcon'); if (helpIcon) helpIcon.onclick = null;
-      const profileIcon = document.getElementById('profileIcon'); if (profileIcon) profileIcon.onclick = null;
-      const darkModeButton = document.getElementById('darkModeToggle'); if (darkModeButton) darkModeButton.onclick = null;
       if (successMessageTimeoutId) clearTimeout(successMessageTimeoutId);
     };
   });
@@ -359,9 +350,14 @@
   transition:fly={{ x: -300, duration: 300, easing: quintOut }}
 >
   <div>
-    <div class="flex items-center gap-2 mb-8 pb-4 border-b ${isDarkMode ? 'border-zinc-700' : 'border-gray-200'}">
-      <img src={isDarkMode ? "/logonamindarkmode.png" : "/logonamin.png"} alt="Microtask Logo" class="w-8 h-8" />
-      <h1 class={`text-xl font-bold ${isDarkMode ? 'text-zinc-100' : 'text-gray-800'}`}>Microtask</h1>
+    <div class="flex items-center justify-between mb-8 pb-4 border-b ${isDarkMode ? 'border-zinc-700' : 'border-gray-200'}">
+      <div class="flex items-center gap-2">
+        <img src={isDarkMode ? "/logonamindarkmode.png" : "/logonamin.png"} alt="Microtask Logo" class="w-8 h-8" />
+        <h1 class={`text-xl font-bold ${isDarkMode ? 'text-zinc-100' : 'text-gray-800'}`}>Microtask</h1>
+      </div>
+      <button on:click={closeSidebar} class={`p-1 rounded-md transition-colors ${isDarkMode ? 'hover:bg-zinc-700 text-zinc-400' : 'hover:bg-gray-100 text-gray-500'}`} aria-label="Close sidebar">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+      </button>
     </div>
         <nav class="flex flex-col gap-2">
           <a href="/home"
@@ -429,56 +425,12 @@
   {/if}
 
   <div class="flex-1 flex flex-col overflow-hidden pt-[60px]">
-  <header class={`top-header ${isDarkMode ? 'bg-zinc-800 border-zinc-700' : 'bg-white border-gray-200'}`}>
-    <div class="header-left">
-      <button id="hamburgerButton" class="menu-btn" on:click={toggleSidebar} aria-label="Toggle Sidebar">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" /></svg>
-      </button>
-      <a href="/home" class="logo">
-        <img src={isDarkMode ? "/logonamindarkmode.png" : "/logonamin.png"} alt="Microtask Logo" class="h-8 w-auto">
-        <span class={`${isDarkMode ? 'text-zinc-100' : 'text-gray-800'}`}>Microtask</span>
-      </a>
-    </div>
-      <div class="flex items-center gap-4 mr-4 right text-gray-600 dark:text-zinc-300 text-sm font-medium">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5" aria-hidden="true">
-          <path fill-rule="evenodd" d="M6.75 2.25A.75.75 0 017.5 3v1.5h9V3A.75.75 0 0118 3v1.5h.75a3 3 0 013 3v11.25a3 3 0 01-3 3H5.25a3 3 0 01-3-3V7.5a3 3 0 013-3H6V3a.75.75 0 01.75-.75zM5.25 6.75c-.621 0-1.125.504-1.125 1.125V18a1.125 1.125 0 001.125 1.125h13.5A1.125 1.125 0 0019.875 18V7.875c0-.621-.504-1.125-1.125-1.125H5.25z" clip-rule="evenodd" /><path d="M10.5 9.75a.75.75 0 00-1.5 0v.01c0 .414.336.75.75.75H10.5v-.01a.75.75 0 000-1.5zM10.5 12.75a.75.75 0 00-1.5 0v.01c0 .414.336.75.75.75H10.5v-.01a.75.75 0 000-1.5zM10.5 15.75a.75.75 0 00-1.5 0v.01c0 .414.336.75.75.75H10.5v-.01a.75.75 0 000-1.5zM13.5 9.75a.75.75 0 00-1.5 0v.01c0 .414.336.75.75.75H13.5v-.01a.75.75 0 000-1.5zM13.5 12.75a.75.75 0 00-1.5 0v.01c0 .414.336.75.75.75H13.5v-.01a.75.75 0 000-1.5zM13.5 15.75a.75.75 0 00-1.5 0v.01c0 .414.336.75.75.75H13.5v-.01a.75.75 0 000-1.5zM16.5 9.75a.75.75 0 00-1.5 0v.01c0 .414.336.75.75.75H16.5v-.01a.75.75 0 000-1.5zM16.5 12.75a.75.75 0 00-1.5 0v.01c0 .414.336.75.75.75H16.5v-.01a.75.75 0 000-1.5zM16.5 15.75a.75.75 0 00-1.5 0v.01c0 .414.336.75.75.75H16.5v-.01a.75.75 0 000-1.5z"/></svg>
-        <span>{currentDateTime}</span>
-      </div>
-      <div class="header-icons">
-        <div class="relative">
-          <button id="bellIcon" aria-label="Notifications" class="relative">
-             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5" aria-hidden="true"><path fill-rule="evenodd" d="M5.25 9a6.75 6.75 0 0113.5 0v.75c0 2.123.8 4.057 2.118 5.52a.75.75 0 01-.297 1.206c-1.544.57-3.16.99-4.831 1.243a3.75 3.75 0 11-7.48 0c-1.673-.253-3.287-.673-4.831-1.243a.75.75 0 01-.297-1.206C4.45 13.807 5.25 11.873 5.25 9.75V9zm4.502 8.9a2.25 2.25 0 104.496 0H9.752z" clip-rule="evenodd" /></svg>
-          </button>
-          <div id="notifWindow" class={`dropdown-window hidden w-80 max-h-96 overflow-y-auto custom-scrollbar ${isDarkMode ? 'bg-zinc-700 border-zinc-600 text-zinc-300' : 'bg-white border-gray-200 text-gray-700'}`}>
-            <h3 class="font-semibold mb-2 text-sm">Notifications</h3> <p class="text-xs text-center py-4">No new notifications.</p>
-          </div>
-        </div>
-        <div class="relative">
-          <button id="helpIcon" aria-label="Help & FAQ">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5" aria-hidden="true"><path fill-rule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12zm8.706-1.442c1.146-.573 2.437.463 2.126 1.706l-.709 2.836.042-.02a.75.75 0 01.67 1.34l-.042.022c-1.147.573-2.438-.463-2.127-1.706l.71-2.836-.042.02a.75.75 0 11-.671-1.34l.041-.022zM12 9a.75.75 0 100-1.5.75.75 0 000 1.5z" clip-rule="evenodd" /></svg>
-          </button>
-          <div id="helpWindow" class={`dropdown-window hidden ${isDarkMode ? 'bg-zinc-700 border-zinc-600 text-zinc-300' : 'bg-white border-gray-200 text-gray-700'}`}>
-            <h3 class="font-semibold mb-2 text-sm">FAQ</h3><ul class="list-disc list-inside space-y-1 text-xs"><li>How do I add a task?</li><li>Where is the calendar?</li></ul><a href="/support" class="text-xs text-blue-600 hover:underline mt-2 block">Visit Support</a>
-          </div>
-        </div>
-        <div class="relative">
-          <button id="profileIcon" aria-label="Profile Menu">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5" aria-hidden="true"><path fill-rule="evenodd" d="M18.685 19.097A9.723 9.723 0 0021.75 12c0-5.385-4.365-9.75-9.75-9.75S2.25 6.615 2.25 12a9.723 9.723 0 003.065 7.097A9.716 9.716 0 0012 21.75a9.716 9.716 0 006.685-2.653zm-12.54-1.285A7.486 7.486 0 0112 15a7.486 7.486 0 015.855 2.812A8.224 8.224 0 0112 20.25a8.224 8.224 0 01-5.855-2.438zM15.75 9a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z" clip-rule="evenodd" /></svg>
-          </button>
-          <div id="profileWindow" class={`dropdown-window hidden ${isDarkMode ? 'bg-zinc-700 border-zinc-600 text-zinc-300' : 'bg-white border-gray-200 text-gray-700'}`}>
-            <h3 class="font-semibold mb-2 text-sm">Profile</h3>
-            <p class="text-xs mb-2 truncate">Welcome, {username || 'User'}!</p>
-            <button on:click={handleLogout} class={`text-xs px-2 py-1.5 rounded w-full text-left transition-colors duration-150 ${isDarkMode ? 'bg-red-700 hover:bg-red-600 text-zinc-300' : 'bg-red-100 hover:bg-red-200 text-red-700'}`}>Logout</button>
-          </div>
-        </div>
-        <button id="darkModeToggle" aria-label="Toggle Dark Mode" class={`ml-2 p-1.5 rounded-full transition-colors duration-150 ${isDarkMode ? 'hover:bg-zinc-700 text-zinc-300' : 'hover:bg-gray-100 text-gray-700'}`}>
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5">
-            {#if isDarkMode} <path fill-rule="evenodd" d="M9.528 1.718a.75.75 0 0 0-.103.103l1.132 1.132a.75.75 0 0 0 1.06 0l1.132-1.132a.75.75 0 0 0-.103-1.06l-1.132-1.132a.75.75 0 0 0-1.06 0L9.63 1.615a.75.75 0 00-.102.103ZM12 3.75a.75.75 0 01.75.75v1.5a.75.75 0 01-1.5 0v-1.5a.75.75 0 01.75-.75ZM18.282 5.282a.75.75 0 00-1.06 0l-1.132 1.132a.75.75 0 00.103 1.06l1.132 1.132a.75.75 0 001.06 0l1.132-1.132a.75.75 0 00-.103-1.06l-1.132-1.132a.75.75 0 000-.103ZM19.5 12a.75.75 0 01-.75.75h-1.5a.75.75 0 010-1.5h1.5a.75.75 0 01.75.75ZM18.282 18.718a.75.75 0 000 1.06l1.132 1.132a.75.75 0 001.06 0l1.132-1.132a.75.75 0 00-.103-1.06l-1.132-1.132a.75.75 0 00-1.06 0l-1.132 1.132a.75.75 0 00.103.103ZM12 18.75a.75.75 0 01-.75.75h-1.5a.75.75 0 010-1.5h1.5a.75.75 0 01.75.75ZM5.718 18.718a.75.75 0 001.06 0l1.132-1.132a.75.75 0 00-.103-1.06l-1.132-1.132a.75.75 0 00-1.06 0L4.586 17.686a.75.75 0 00.103 1.06l1.132 1.132a.75.75 0 000-.103ZM4.5 12a.75.75 0 01.75-.75h1.5a.75.75 0 010 1.5h-1.5a.75.75 0 01-.75-.75ZM5.718 5.282a.75.75 0 000-1.06l-1.132-1.132a.75.75 0 00-1.06 0L2.39 4.114a.75.75 0 00.103 1.06l1.132 1.132a.75.75 0 001.06 0l1.132-1.132a.75.75 0 00-.103-.103ZM12 6.75a5.25 5.25 0 015.25 5.25 5.25 5.25 0 01-5.25 5.25 5.25 5.25 0 01-5.25-5.25 5.25 5.25 0 015.25-5.25Z" clip-rule="evenodd" />
-            {:else} <path fill-rule="evenodd" d="M10.5 3.75a6.75 6.75 0 1 0 0 13.5 6.75 6.75 0 0 0 0-13.5ZM12 16.5a4.5 4.5 0 1 1 0-9 4.5 4.5 0 010 9Z" clip-rule="evenodd" /> {/if}
-          </svg>
-        </button>
-      </div>
-    </header>
+  <AppHeader 
+    {isDarkMode} 
+    {username} 
+    on:toggleSidebar={toggleSidebar} 
+    on:toggleDarkMode={toggleDarkMode} 
+  />
 
     <div class="flex-1 flex flex-col overflow-hidden h-full">
         <div class="px-4 sm:px-6 py-2 sm:py-3 flex-shrink-0">
@@ -486,8 +438,8 @@
             <p class={`text-xs sm:text-sm mt-0.5 ${isDarkMode ? 'text-zinc-400' : 'text-gray-500'}`}>Here is your monthly schedule.</p>
         </div>
 
-      <main class="px-4 sm:px-6 pb-4 flex-1 flex flex-col min-h-0 overflow-hidden">
-        <div class={`calendar-container w-full p-2 sm:p-3 rounded-lg shadow flex flex-col flex-1 min-h-0 overflow-hidden ${isDarkMode ? 'bg-zinc-800 border border-zinc-700' : 'bg-white border border-gray-200'}`}>
+      <main class="px-4 sm:px-6 lg:px-6 xl:px-20 2xl:px-30 pb-4 flex-1 flex flex-col min-h-0 overflow-hidden">
+        <div class={`calendar-container w-full max-w-7xl mx-auto p-2 sm:p-3 rounded-lg shadow flex flex-col flex-1 min-h-0 overflow-hidden ${isDarkMode ? 'bg-zinc-800 border border-zinc-700' : 'bg-white border border-gray-200'}`}>
              <div class="flex justify-between items-center mb-2 sm:mb-3 px-1 flex-shrink-0">
                 <button on:click={prevMonth} aria-label="Previous Month" class={`p-2 rounded-md transition-colors ${isDarkMode ? 'hover:bg-zinc-700 text-zinc-300' : 'hover:bg-gray-100 text-gray-600'}`}><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg></button>
                 <h2 class={`text-lg sm:text-xl font-semibold ${isDarkMode ? 'text-zinc-100' : 'text-gray-800'}`}>{new Date(currentYear, currentMonth).toLocaleString('default', { month: 'long' })} {currentYear}</h2>
@@ -551,24 +503,7 @@
   :global(.dark) ::-webkit-scrollbar-thumb:hover { background: #718096; }
   :global(.dark) .custom-scrollbar { scrollbar-color: #4a5568 #2d3748; }
 
-  .top-header { position: fixed; top: 0; left: 0; right: 0; display: flex; align-items: center; justify-content: space-between; padding: 0 1rem; height: 60px; z-index: 40; box-shadow: 0 1px 3px rgba(0,0,0,0.05); transition: background-color 0.2s, border-color 0.2s; }
-  .header-left { display: flex; align-items: center; gap: 0.75rem; }
-  .top-header .menu-btn { background: none; border: none; cursor: pointer; padding: 0.5rem; border-radius: 9999px; transition: background-color 0.15s ease; }
-  /* Removed img specific styling, SVG will inherit color */
-  .dark .top-header .menu-btn:hover { background-color: #374151; }
-  
-  .top-header .logo { display: flex; align-items: center; gap: 0.5rem; font-weight: 600; font-size: 1.125rem; text-decoration: none; }
-  /* Removed img specific styling for logo */
-
-  .top-header .header-icons { display: flex; align-items: center; gap: 0.25rem; }
-  .top-header .header-icons button { background: none; border: none; cursor: pointer; padding: 0.5rem; line-height: 0; display: flex; align-items: center; justify-content: center; border-radius: 9999px; width: 36px; height: 36px; transition: background-color 0.15s ease; }
-  .top-header .header-icons button:hover { background-color: #f3f4f6; } /* Light mode hover */
-  .dark .top-header .header-icons button:hover { background-color: #374151; } /* Dark mode hover */
-  /* Removed img specific styling for header icons */
-  
   .relative { position: relative; }
-  .dropdown-window { position: absolute; right: 0; top: calc(100% + 8px); border-radius: 0.5rem; box-shadow: 0 4px 12px rgba(0,0,0,0.1); padding: 0.75rem; width: 260px; z-index: 50; opacity: 0; transform: translateY(-5px) scale(0.98); transition: opacity 0.15s ease-out, transform 0.15s ease-out; pointer-events: none; visibility: hidden; }
-  .dropdown-window:not(.hidden) { opacity: 1; transform: translateY(0) scale(1); pointer-events: auto; visibility: visible; }
   .hidden { display: none !important; }
 
   :global(.dark .bg-zinc-800) { background-color: #1f2937; }

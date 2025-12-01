@@ -27,16 +27,21 @@
     // --- Delete Confirmation State ---
     let showDeleteConfirm = false;
 
-    // Reactive statement to initialize edit form when task changes or edit mode starts
-    $: if (task && isEditMode) {
+    // Track the task ID we've initialized the form for
+    let initializedForTaskId: string | null = null;
+
+    // Reactive statement to initialize edit form when entering edit mode for a new task
+    $: if (task && isEditMode && initializedForTaskId !== task.id) {
         editTitle = task.title;
         editDescription = task.description || '';
         editDueDateISO = task.dueDateISO || '';
         editDueTime = task.dueTime || '';
         editPriority = task.priority || 'standard';
-        editFormError = null; // Reset error on mode change
+        editFormError = null;
+        initializedForTaskId = task.id;
     } else if (!isEditMode) {
-        editFormError = null; // Clear error when exiting edit mode
+        editFormError = null;
+        initializedForTaskId = null; // Reset so next time we enter edit mode, we re-initialize
     }
 
 
@@ -44,6 +49,7 @@
         isEditMode = false; // Ensure edit mode is reset
         showDeleteConfirm = false; // Ensure delete confirm is reset
         isLoadingOperation = false; // Stop loading when modal closes
+        initializedForTaskId = null; // Reset initialization tracker
 		dispatch('close');
 	}
 
@@ -139,7 +145,7 @@
 {#if isOpen && task}
 	<div
 		class="modal-backdrop"
-		on:click={closeModalAndReset}
+		on:mousedown|self={closeModalAndReset}
 		transition:fly={{ y: 20, duration: 200, easing: quintOut }}
 		role="dialog"
 		aria-modal="true"

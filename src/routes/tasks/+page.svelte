@@ -7,6 +7,7 @@
     import type { SubmitFunction, ActionResult } from '@sveltejs/kit';
     import { quintOut } from 'svelte/easing';
     import { browser } from '$app/environment';
+    import AppHeader from '$lib/components/AppHeader.svelte';
 
     // --- Task Type ---
     interface TaskForFrontend {
@@ -170,18 +171,7 @@
         localStorage.setItem('theme', isDarkMode ? 'dark' : 'light');
       }
     }
-    const topHeaderDropdownIds = ['notifWindow', 'helpWindow', 'profileWindow'];
-    function toggleHeaderWindow(id: string) {
-        const el = document.getElementById(id);
-        if (el) el.classList.toggle('hidden');
-    }
-    function closeOtherHeaderWindows(currentId: string) {
-        topHeaderDropdownIds.forEach(id => {
-            if (id !== currentId) {
-                document.getElementById(id)?.classList.add('hidden');
-            }
-        });
-    }
+
 
     onMount(() => {
         const urlParams = new URLSearchParams(window.location.search);
@@ -196,23 +186,6 @@
           document.body.classList.toggle('dark', isDarkMode);
           if (!data.user?.name) username = localStorage.getItem('microtask_username') || "User";
 
-          const darkModeButton = document.getElementById('darkModeToggle');
-          if (darkModeButton) darkModeButton.addEventListener('click', toggleDarkMode);
-
-          const setupIconListener = (iconId: string, windowId: string) => {
-            const iconElement = document.getElementById(iconId);
-            if (iconElement) {
-              iconElement.addEventListener('click', (e) => {
-                e.stopPropagation();
-                toggleHeaderWindow(windowId); 
-                closeOtherHeaderWindows(windowId); 
-              });
-            }
-          };
-          setupIconListener('bellIcon', 'notifWindow');
-          setupIconListener('helpIcon', 'helpWindow');
-          setupIconListener('profileIcon', 'profileWindow');
-          
           // Update date/time
           updateDateTime();
           dateTimeInterval = setInterval(updateDateTime, 60000);
@@ -220,24 +193,6 @@
 
         const clickHandler = (event: MouseEvent) => {
             const target = event.target as Node | null;
-            let isClickInsideDropdownTrigger = false;
-            const triggerIds = ['bellIcon', 'helpIcon', 'profileIcon']; 
-            triggerIds.forEach(triggerId => {
-                const triggerEl = document.getElementById(triggerId);
-                if (triggerEl && triggerEl.contains(target)) {
-                    isClickInsideDropdownTrigger = true;
-                }
-            });
-            let isClickInsideDropdownWindow = false;
-            topHeaderDropdownIds.forEach(windowId => { 
-                const windowEl = document.getElementById(windowId);
-                if (windowEl && !windowEl.classList.contains('hidden') && windowEl.contains(target)) {
-                    isClickInsideDropdownWindow = true;
-                }
-            });
-            if (!isClickInsideDropdownTrigger && !isClickInsideDropdownWindow) {
-                closeOtherHeaderWindows('');
-            }
             const sidebarEl = document.getElementById('sidebar');
             const hamburgerButton = document.getElementById('hamburgerButton');
              if (sidebarEl && !sidebarEl.contains(target) && hamburgerButton && !hamburgerButton.contains(target) && isSidebarOpen) {
@@ -251,10 +206,6 @@
             document.removeEventListener('click', clickHandler);
             if (messageTimeoutId) clearTimeout(messageTimeoutId);
             if (batchDeleteMessageTimeoutId) clearTimeout(batchDeleteMessageTimeoutId);
-            if (browser) {
-                const darkModeButton = document.getElementById('darkModeToggle');
-                if (darkModeButton) darkModeButton.removeEventListener('click', toggleDarkMode);
-            }
         };
     });
 
@@ -684,52 +635,7 @@
 </form>
 
 <div class="app-container">
-    <header class="top-header">
-      <div class="header-left">
-        <button id="hamburgerButton" class="menu-btn" on:click={toggleSidebar} aria-label="Toggle Sidebar">
-          <img src="/Hamburger.png" alt="Menu" class="w-6 h-6" />
-        </button>
-      <a href="/home" class="logo">
-  <img src={isDarkMode ? "/logonamindarkmode.png" : "/logonamin.png"} alt="Microtask Logo">
-  <span class={`${isDarkMode ? 'text-zinc-100' : 'text-gray-800'}`}>Microtask</span>
-</a>
-      </div>
-      <div class="flex items-center gap-4 mr-4 right text-gray-600 dark:text-zinc-300 text-sm font-medium">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5" aria-hidden="true">
-          <path fill-rule="evenodd" d="M6.75 2.25A.75.75 0 017.5 3v1.5h9V3A.75.75 0 0118 3v1.5h.75a3 3 0 013 3v11.25a3 3 0 01-3 3H5.25a3 3 0 01-3-3V7.5a3 3 0 013-3H6V3a.75.75 0 01.75-.75zM5.25 6.75c-.621 0-1.125.504-1.125 1.125V18a1.125 1.125 0 001.125 1.125h13.5A1.125 1.125 0 0019.875 18V7.875c0-.621-.504-1.125-1.125-1.125H5.25z" clip-rule="evenodd" /><path d="M10.5 9.75a.75.75 0 00-1.5 0v.01c0 .414.336.75.75.75H10.5v-.01a.75.75 0 000-1.5zM10.5 12.75a.75.75 0 00-1.5 0v.01c0 .414.336.75.75.75H10.5v-.01a.75.75 0 000-1.5zM10.5 15.75a.75.75 0 00-1.5 0v.01c0 .414.336.75.75.75H10.5v-.01a.75.75 0 000-1.5zM13.5 9.75a.75.75 0 00-1.5 0v.01c0 .414.336.75.75.75H13.5v-.01a.75.75 0 000-1.5zM13.5 12.75a.75.75 0 00-1.5 0v.01c0 .414.336.75.75.75H13.5v-.01a.75.75 0 000-1.5zM13.5 15.75a.75.75 0 00-1.5 0v.01c0 .414.336.75.75.75H13.5v-.01a.75.75 0 000-1.5zM16.5 9.75a.75.75 0 00-1.5 0v.01c0 .414.336.75.75.75H16.5v-.01a.75.75 0 000-1.5zM16.5 12.75a.75.75 0 00-1.5 0v.01c0 .414.336.75.75.75H16.5v-.01a.75.75 0 000-1.5zM16.5 15.75a.75.75 0 00-1.5 0v.01c0 .414.336.75.75.75H16.5v-.01a.75.75 0 000-1.5z"/></svg>
-        <span>{currentDateTime}</span>
-      </div>
-      <div class="header-icons">
-        <div class="relative">
-          <button id="bellIcon" aria-label="Notifications"><img src="/Bell.png" alt="Notifications"></button>
-          <div id="notifWindow" class={`dropdown-window hidden ${isDarkMode ? 'bg-zinc-700 border-zinc-600 text-zinc-300' : 'bg-white border-gray-200 text-gray-700'}`}>
-            <h3 class="font-semibold mb-2 text-sm">Notifications</h3><p class="text-xs">No new notifications.</p>
-          </div>
-        </div>
-        <div class="relative">
-          <button id="helpIcon" aria-label="Help & FAQ"><img src="/Question.png" alt="FAQ"></button>
-          <div id="helpWindow" class={`dropdown-window hidden ${isDarkMode ? 'bg-zinc-700 border-zinc-600 text-zinc-300' : 'bg-white border-gray-200 text-gray-700'}`}>
-            <h3 class="font-semibold mb-2 text-sm">FAQ</h3>
-            <ul class="list-disc list-inside space-y-1 text-xs"><li>How do I add a task?</li><li>Where is the calendar?</li></ul>
-            <a href="/support" class="text-xs text-blue-600 hover:underline mt-2 block">Visit Support</a>
-          </div>
-        </div>
-        <div class="relative">
-          <button id="profileIcon" aria-label="Profile Menu"><img src="/Profile.png" alt="Profile"></button>
-          <div id="profileWindow" class={`dropdown-window hidden ${isDarkMode ? 'bg-zinc-700 border-zinc-600 text-zinc-300' : 'bg-white border-gray-200 text-gray-700'}`}>
-            <h3 class="font-semibold mb-2 text-sm">Profile</h3>
-            <p class="text-xs mb-2 truncate">Welcome, {username || 'User'}!</p>
-            <form method="POST" action="?/logout" use:enhance><button type="submit" class={`text-xs px-2 py-1.5 rounded w-full text-left transition-colors duration-150 ${isDarkMode ? 'bg-red-700 hover:bg-red-600 text-zinc-300' : 'bg-red-100 hover:bg-red-200 text-red-700'}`}>Logout</button></form>
-          </div>
-        </div>
-        <button id="darkModeToggle" aria-label="Toggle Dark Mode" class={`ml-2 p-1.5 rounded-full transition-colors duration-150 ${isDarkMode ? 'hover:bg-zinc-700 text-zinc-300' : 'hover:bg-gray-100 text-gray-700'}`}>
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5">
-            {#if isDarkMode} <path fill-rule="evenodd" d="M9.528 1.718a.75.75 0 0 0-.103.103l1.132 1.132a.75.75 0 0 0 1.06 0l1.132-1.132a.75.75 0 0 0-.103-1.06l-1.132-1.132a.75.75 0 0 0-1.06 0L9.63 1.615a.75.75 0 0 0-.102.103ZM12 3.75a.75.75 0 0 1 .75.75v1.5a.75.75 0 0 1-1.5 0v-1.5a.75.75 0 0 1 .75-.75ZM18.282 5.282a.75.75 0 0 0-1.06 0l-1.132 1.132a.75.75 0 0 0 .103 1.06l1.132 1.132a.75.75 0 0 0 1.06 0l1.132-1.132a.75.75 0 0 0-.103-1.06l-1.132-1.132a.75.75 0 0 0 0-.103ZM19.5 12a.75.75 0 0 1-.75.75h-1.5a.75.75 0 0 1 0-1.5h1.5a.75.75 0 0 1 .75.75ZM18.282 18.718a.75.75 0 0 0 0 1.06l1.132 1.132a.75.75 0 0 0 1.06 0l1.132-1.132a.75.75 0 0 0-.103-1.06l-1.132-1.132a.75.75 0 0 0-1.06 0l-1.132 1.132a.75.75 0 0 0 .103.103ZM12 18.75a.75.75 0 0 1-.75.75h-1.5a.75.75 0 0 1 0-1.5h1.5a.75.75 0 0 1 .75.75ZM5.718 18.718a.75.75 0 0 0 1.06 0l1.132-1.132a.75.75 0 0 0-.103-1.06l-1.132-1.132a.75.75 0 0 0-1.06 0L4.586 17.686a.75.75 0 0 0 .103 1.06l1.132 1.132a.75.75 0 0 0 0 .103ZM4.5 12a.75.75 0 0 1 .75-.75h1.5a.75.75 0 0 1 0 1.5h-1.5a.75.75 0 0 1-.75-.75ZM5.718 5.282a.75.75 0 0 0 0-1.06l-1.132-1.132a.75.75 0 0 0-1.06 0L2.39 4.114a.75.75 0 0 0 .103 1.06l1.132 1.132a.75.75 0 0 0 1.06 0l1.132-1.132a.75.75 0 0 0-.103-.103ZM12 6.75a5.25 5.25 0 0 1 5.25 5.25 5.25 5.25 0 0 1-5.25 5.25 5.25 5.25 0 0 1-5.25-5.25 5.25 5.25 0 0 1 5.25-5.25Z" clip-rule="evenodd" />
-            {:else} <path fill-rule="evenodd" d="M10.5 3.75a6.75 6.75 0 1 0 0 13.5 6.75 6.75 0 0 0 0-13.5ZM12 16.5a4.5 4.5 0 1 1 0-9 4.5 4.5 0 0 1 0 9Z" clip-rule="evenodd" /> {/if}
-          </svg>
-        </button>
-      </div>
-    </header>
+    <AppHeader {isDarkMode} {username} {currentDateTime} on:toggleSidebar={toggleSidebar} on:toggleDarkMode={toggleDarkMode} on:logout={handleLogout} />
     {#if isSidebarOpen}
     <aside
   id="sidebar"
@@ -737,9 +643,14 @@
   transition:fly={{ x: -300, duration: 300, easing: quintOut }}
 >
   <div>
-    <div class="flex items-center gap-2 mb-8 pb-4 border-b ${isDarkMode ? 'border-zinc-700' : 'border-gray-200'}">
-      <img src={isDarkMode ? "/logonamindarkmode.png" : "/logonamin.png"} alt="Logo" class="w-8 h-8" />
-      <h1 class={`text-xl font-bold ${isDarkMode ? 'text-zinc-100' : 'text-gray-800'}`}>Microtask</h1>
+    <div class={`flex items-center justify-between mb-8 pb-4 border-b ${isDarkMode ? 'border-zinc-700' : 'border-gray-200'}`}>
+      <div class="flex items-center gap-2">
+        <img src={isDarkMode ? "/logonamindarkmode.png" : "/logonamin.png"} alt="Logo" class="w-8 h-8" />
+        <h1 class={`text-xl font-bold ${isDarkMode ? 'text-zinc-100' : 'text-gray-800'}`}>Microtask</h1>
+      </div>
+      <button on:click={closeSidebar} class={`p-1 rounded-md transition-colors ${isDarkMode ? 'hover:bg-zinc-700 text-zinc-400' : 'hover:bg-gray-100 text-gray-500'}`} aria-label="Close sidebar">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+      </button>
     </div>
                 <nav class="flex flex-col gap-2">
           <a href="/home"
@@ -1185,24 +1096,7 @@
       box-sizing: border-box;
     }
 
-    .top-header {
-      position: fixed; 
-      top: 0;
-      left: 0;
-      right: 0;
-      height: 60px; 
-      z-index: 1000;
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 0 1rem; 
-      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-      transition: background-color 0.2s, border-color 0.2s;
-      background-color: #fff;
-      border-bottom: 1px solid #e5e7eb; 
-    }
-    :global(body.dark) .top-header {
-        background-color: #1f2937; 
-        border-bottom-color: #374151; 
-    }
+
 
     #sidebar {
         z-index: 10000; 
@@ -1243,84 +1137,13 @@
         --color-na-text: #4b5563; 
     }
 
-    .header-left { display: flex; align-items: center; gap: 0.75rem; } 
-    .menu-btn {
-        background: none; border: none; cursor: pointer;
-        padding: 0.5rem; 
-        border-radius: 9999px; 
-        transition: background-color 0.15s ease; 
-    }
-    .menu-btn:hover { background-color: #f3f4f6; } 
-    :global(body.dark) .menu-btn:hover { background-color: #374151; } 
-    .menu-btn img { width: 1.5rem; height: 1.5rem; display: block; } 
-     :global(body.dark) .menu-btn img { filter: invert(0.8); } 
+ 
 
-    .logo {
-        display: flex; align-items: center; gap: 0.5rem; 
-        font-weight: 600; font-size: 1.125rem; 
-        text-decoration: none;
-    }
-    .logo img { height: 2rem; width: auto; }
-.logo span { color: #111827; }
-:global(body.dark) .logo span { color: #f3f4f6; }
-/* :global(body.dark) .logo img { filter: invert(0.1) contrast(1.5) brightness(1.5) ; } */ /* Removed or commented out */
 
-    .header-icons { display: flex; align-items: center; gap: 0.25rem; } 
-    .header-icons button {
-        background: none; border: none; cursor: pointer;
-        padding: 0.5rem; line-height: 0; 
-        display: flex; align-items: center; justify-content: center;
-        border-radius: 9999px; width: 36px; height: 36px; 
-        transition: background-color 0.15s ease; 
-    }
-    .header-icons button:hover { background-color: #f3f4f6; } 
-    :global(body.dark) .header-icons button:hover { background-color: #374151; } 
 
-    .header-icons img {
-        height: 1.25rem; width: 1.25rem; 
-        opacity: 0.8; 
-        transition: opacity 0.15s ease; 
-    }
-     .header-icons button:hover img { opacity: 1; } 
-     :global(body.dark) .header-icons img { filter: invert(0.8); opacity: 0.9; } 
-     :global(body.dark) .header-icons button:hover img { opacity: 1; }
 
-    .relative { position: relative; }
-    .dropdown-window { 
-        position: absolute; right: 0; top: calc(100% + 8px);
-        border-radius: 0.5rem; 
-        box-shadow: 0 4px 12px rgba(0,0,0,0.1); 
-        padding: 0.75rem; 
-        width: 260px; 
-        z-index: 50; 
-        opacity: 0; transform: translateY(-5px) scale(0.98); 
-        transition: opacity 0.15s ease-out, transform 0.15s ease-out, visibility 0s linear 0.15s; 
-        pointer-events: none; visibility: hidden; 
-        background-color: white; border: 1px solid #e5e7eb; color: #374151; 
-    }
-    .dropdown-window:not(.hidden) { opacity: 1; transform: translateY(0) scale(1); pointer-events: auto; visibility: visible; transition-delay: 0s; }
-    .dropdown-window.hidden { display: none !important; }
 
-     :global(body.dark) .dropdown-window {
-        background-color: #1f2937; 
-        border-color: #374151; 
-        color: #d1d5db; 
-     }
-     :global(body.dark) .dropdown-window h3 { color: #e5e7eb; } 
-     :global(body.dark) .dropdown-window p, :global(body.dark) .dropdown-window li { color: #9ca3af; } 
-     :global(body.dark) .dropdown-window a { color: #93c5fd; } 
-     :global(body.dark) .dropdown-window button.text-gray-700 { color: #d1d5db; } 
-     :global(body.dark) .dropdown-window button.bg-gray-100 { background-color: #374151; }
-     :global(body.dark) .dropdown-window button.hover\:bg-gray-200:hover { background-color: #4b5563; }
-     :global(body.dark) .dropdown-window button.text-red-700 { color: #fca5a5; } 
-     :global(body.dark) .dropdown-window button.bg-red-100 { background-color: #7f1d1d; } 
-     :global(body.dark) .dropdown-window button.hover\:bg-red-200:hover { background-color: #991b1b; } 
-
-    #darkModeToggle svg { width: 1.25rem; height: 1.25rem; } 
-    :global(body.dark) #darkModeToggle { color: #d1d5db; } 
-    :global(body.dark) #darkModeToggle:hover { background-color: #374151; } 
-    #darkModeToggle:not(body.dark) { color: #374151; } 
-    #darkModeToggle:not(body.dark):hover { background-color: #e5e7eb; } 
+ 
 
     .page-title-header { 
         padding: 10px 15px 15px 15px; 

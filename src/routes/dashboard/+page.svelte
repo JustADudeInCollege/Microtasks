@@ -8,6 +8,7 @@
     import { globalChartDisplayType, type GlobalChartType } from '$lib/stores/chartTypeStore';
     import { fly } from 'svelte/transition';
     import { quintOut } from 'svelte/easing';
+    import AppHeader from '$lib/components/AppHeader.svelte';
 
 	export let data: import('./$types').PageData;
 
@@ -15,8 +16,6 @@
 	let isSidebarOpen = false;
 	let isDarkMode = false; // This will control the body.dark class
 	let currentDateTime = "";
-
-    const dropdownIds = ['notifWindow', 'helpWindow', 'profileWindow'];
 
 	$: dashboardStats = data.dashboardStats;
 	$: pageError = data.error;
@@ -68,39 +67,7 @@
         initOrUpdateAllCharts();
 	}
 
-    function toggleWindow(id: string) {
-        const el = document.getElementById(id);
-        if (el) el.classList.toggle('hidden');
-    }
-
-    function closeOtherWindows(currentId: string) {
-        dropdownIds.forEach(id => {
-            if (id !== currentId) {
-                const el = document.getElementById(id);
-                if (el && !el.classList.contains('hidden')) {
-                    el.classList.add('hidden');
-                }
-            }
-        });
-    }
-
-    function updateDateTime() {
-        const now = new Date();
-        const options: Intl.DateTimeFormatOptions = {
-            weekday: 'long',
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric',
-            hour: 'numeric',
-            minute: 'numeric',
-            hour12: true
-        };
-        currentDateTime = now.toLocaleDateString('en-US', options);
-    }
-
-    let handleGlobalClickListener: ((event: MouseEvent) => void) | null = null;
     let handleEscKeyListener: ((event: KeyboardEvent) => void) | null = null;
-    let dateTimeInterval: ReturnType<typeof setInterval> | null = null;
 
 	onMount(() => {
 		Chart.register(...registerables);
@@ -122,68 +89,15 @@
             }
         }
 
-        // Update date/time
-        updateDateTime();
-        dateTimeInterval = setInterval(updateDateTime, 60000); // Update every minute
-
         unsubscribeGlobalChartType = globalChartDisplayType.subscribe(_value => {
             if (browser && dashboardStats && prioritiesChartCanvas && timelinessChartCanvas && tasksCompletedChartCanvas) {
                 initOrUpdateAllCharts();
             }
         });
-
-        const setupIconListener = (iconId: string, windowId: string) => {
-            const iconElement = document.getElementById(iconId);
-            if (iconElement) {
-                const listener = (e: Event) => { e.stopPropagation(); toggleWindow(windowId); };
-                iconElement.addEventListener('click', listener);
-                // Store listener to remove it in onDestroy
-                (iconElement as any).__clickHandler = listener;
-            }
-        };
-        setupIconListener('bellIcon', 'notifWindow');
-        setupIconListener('helpIcon', 'helpWindow');
-        setupIconListener('profileIcon', 'profileWindow');
-        
-        const darkModeButton = document.getElementById('darkModeToggle');
-        if (darkModeButton) darkModeButton.addEventListener('click', toggleDarkMode);
-
-        handleGlobalClickListener = (event: MouseEvent) => {
-            const target = event.target as Node | null;
-            let isClickInsideHeaderDropdownTrigger = false;
-            const headerTriggerIds = ['bellIcon', 'helpIcon', 'profileIcon']; 
-            headerTriggerIds.forEach(triggerId => {
-                const triggerEl = document.getElementById(triggerId);
-                if (triggerEl && triggerEl.contains(target)) isClickInsideHeaderDropdownTrigger = true;
-            });
-
-            let isClickInsideHeaderDropdownWindow = false;
-            dropdownIds.forEach(windowId => { 
-                const windowEl = document.getElementById(windowId);
-                if (windowEl && windowEl.contains(target)) isClickInsideHeaderDropdownWindow = true;
-            });
-            
-            if (!isClickInsideHeaderDropdownTrigger && !isClickInsideHeaderDropdownWindow) {
-                closeOtherWindows(''); 
-            }
-
-            const sidebarEl = document.getElementById('sidebar');
-            const hamburgerButton = document.getElementById('hamburgerButton');
-            if (isSidebarOpen && sidebarEl && !sidebarEl.contains(target) && hamburgerButton && !hamburgerButton.contains(target)) {
-                closeSidebar();
-            }
-        };
-        if (browser) document.addEventListener('click', handleGlobalClickListener);
         
         handleEscKeyListener = (event: KeyboardEvent) => {
             if (event.key === 'Escape') {
                 if (isSidebarOpen) closeSidebar();
-                dropdownIds.forEach(id => {
-                    const el = document.getElementById(id);
-                    if (el && !el.classList.contains('hidden-dropdown')) {
-                        el.classList.add('hidden-dropdown');
-                    }
-                });
             }
         };
 		if (browser) document.addEventListener('keydown', handleEscKeyListener);
@@ -197,19 +111,9 @@
 			timelinessChart?.destroy();
 			tasksCompletedChart?.destroy();
             if (unsubscribeGlobalChartType) unsubscribeGlobalChartType();
-            if (dateTimeInterval) clearInterval(dateTimeInterval);
             if (browser) {
-                if (handleGlobalClickListener) document.removeEventListener('click', handleGlobalClickListener);
 			    if (handleEscKeyListener) document.removeEventListener('keydown', handleEscKeyListener);
             }
-            ['bellIcon', 'helpIcon', 'profileIcon'].forEach(iconId => {
-                const iconElement = document.getElementById(iconId);
-                if (iconElement && (iconElement as any).__clickHandler) {
-                    iconElement.removeEventListener('click', (iconElement as any).__clickHandler);
-                }
-            });
-            const darkModeButtonEl = document.getElementById('darkModeToggle');
-            if (darkModeButtonEl) darkModeButtonEl.removeEventListener('click', toggleDarkMode);
 		};
 	});
 
@@ -335,9 +239,14 @@
     transition:fly={{ x: -300, duration: 300, easing: quintOut }}
 >
   <div>
-    <div class="sidebar-header flex items-center gap-2 mb-8 pb-4 border-b">
-      <img src={isDarkMode ? "/logonamindarkmode.png" : "/logonamin.png"} alt="Microtask Logo" class="w-8 h-8" />
-      <h1 class="sidebar-title text-xl font-bold">Microtask</h1>
+    <div class="sidebar-header flex items-center justify-between mb-8 pb-4 border-b">
+      <div class="flex items-center gap-2">
+        <img src={isDarkMode ? "/logonamindarkmode.png" : "/logonamin.png"} alt="Microtask Logo" class="w-8 h-8" />
+        <h1 class="sidebar-title text-xl font-bold">Microtask</h1>
+      </div>
+      <button on:click={closeSidebar} class={`p-1 rounded-md transition-colors ${isDarkMode ? 'hover:bg-zinc-700 text-zinc-400' : 'hover:bg-gray-100 text-gray-500'}`} aria-label="Close sidebar">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+      </button>
     </div>
         <nav class="flex flex-col gap-2">
           <a href="/home"
@@ -399,56 +308,7 @@
 	{/if}
 
 	<div class="flex-1 flex flex-col overflow-hidden">
-	<header class="top-header">
-		<div class="header-left">
-			<button id="hamburgerButton" class="menu-btn" on:click={toggleSidebar} aria-label="Toggle Sidebar">
-        		<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" /></svg>
-			</button>
-            <a href="/home" class="logo flex items-center gap-2 no-underline">
-                <img src={isDarkMode ? "/logonamindarkmode.png" : "/logonamin.png"} alt="Microtask Logo" class="h-8 w-auto">
-                <span class="top-header-logo-text font-semibold text-xl">Microtask</span>
-            </a>
-		</div>
-      <div class="flex items-center gap-4 mr-4 right text-gray-600 dark:text-zinc-300 text-sm font-medium">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5" aria-hidden="true">
-          <path fill-rule="evenodd" d="M6.75 2.25A.75.75 0 017.5 3v1.5h9V3A.75.75 0 0118 3v1.5h.75a3 3 0 013 3v11.25a3 3 0 01-3 3H5.25a3 3 0 01-3-3V7.5a3 3 0 013-3H6V3a.75.75 0 01.75-.75zM5.25 6.75c-.621 0-1.125.504-1.125 1.125V18a1.125 1.125 0 001.125 1.125h13.5A1.125 1.125 0 0019.875 18V7.875c0-.621-.504-1.125-1.125-1.125H5.25z" clip-rule="evenodd" /><path d="M10.5 9.75a.75.75 0 00-1.5 0v.01c0 .414.336.75.75.75H10.5v-.01a.75.75 0 000-1.5zM10.5 12.75a.75.75 0 00-1.5 0v.01c0 .414.336.75.75.75H10.5v-.01a.75.75 0 000-1.5zM10.5 15.75a.75.75 0 00-1.5 0v.01c0 .414.336.75.75.75H10.5v-.01a.75.75 0 000-1.5zM13.5 9.75a.75.75 0 00-1.5 0v.01c0 .414.336.75.75.75H13.5v-.01a.75.75 0 000-1.5zM13.5 12.75a.75.75 0 00-1.5 0v.01c0 .414.336.75.75.75H13.5v-.01a.75.75 0 000-1.5zM13.5 15.75a.75.75 0 00-1.5 0v.01c0 .414.336.75.75.75H13.5v-.01a.75.75 0 000-1.5zM16.5 9.75a.75.75 0 00-1.5 0v.01c0 .414.336.75.75.75H16.5v-.01a.75.75 0 000-1.5zM16.5 12.75a.75.75 0 00-1.5 0v.01c0 .414.336.75.75.75H16.5v-.01a.75.75 0 000-1.5zM16.5 15.75a.75.75 0 00-1.5 0v.01c0 .414.336.75.75.75H16.5v-.01a.75.75 0 000-1.5z"/></svg>
-        <span>{currentDateTime}</span>
-      </div>
-			<div class="header-icons">
-        <div class="relative">
-          <button id="bellIcon" aria-label="Notifications">
-             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5" aria-hidden="true"><path fill-rule="evenodd" d="M5.25 9a6.75 6.75 0 0113.5 0v.75c0 2.123.8 4.057 2.118 5.52a.75.75 0 01-.297 1.206c-1.544.57-3.16.99-4.831 1.243a3.75 3.75 0 11-7.48 0c-1.673-.253-3.287-.673-4.831-1.243a.75.75 0 01-.297-1.206C4.45 13.807 5.25 11.873 5.25 9.75V9zm4.502 8.9a2.25 2.25 0 104.496 0H9.752z" clip-rule="evenodd" /></svg>
-          </button>
-          <div id="notifWindow" class="dropdown-window hidden w-80 max-h-96 overflow-y-auto custom-scrollbar">
-            <h3 class="font-semibold mb-2 text-sm">Notifications</h3> <p class="text-xs text-center py-4">No new notifications.</p>
-          </div>
-        </div>
-        <div class="relative">
-          <button id="helpIcon" aria-label="Help & FAQ">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5" aria-hidden="true"><path fill-rule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12zm8.706-1.442c1.146-.573 2.437.463 2.126 1.706l-.709 2.836.042-.02a.75.75 0 01.67 1.34l-.042.022c-1.147.573-2.438-.463-2.127-1.706l.71-2.836-.042.02a.75.75 0 11-.671-1.34l.041-.022zM12 9a.75.75 0 100-1.5.75.75 0 000 1.5z" clip-rule="evenodd" /></svg>
-          </button>
-          <div id="helpWindow" class="dropdown-window hidden">
-            <h3 class="font-semibold mb-2 text-sm">FAQ</h3><ul class="list-disc list-inside space-y-1 text-xs"><li>How do I add a task?</li><li>Where is the calendar?</li></ul><a href="/support" class="text-xs text-blue-600 hover:underline mt-2 block">Visit Support</a>
-          </div>
-        </div>
-        <div class="relative">
-          <button id="profileIcon" aria-label="Profile Menu">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5" aria-hidden="true"><path fill-rule="evenodd" d="M18.685 19.097A9.723 9.723 0 0021.75 12c0-5.385-4.365-9.75-9.75-9.75S2.25 6.615 2.25 12a9.723 9.723 0 003.065 7.097A9.716 9.716 0 0012 21.75a9.716 9.716 0 006.685-2.653zm-12.54-1.285A7.486 7.486 0 0112 15a7.486 7.486 0 015.855 2.812A8.224 8.224 0 0112 20.25a8.224 8.224 0 01-5.855-2.438zM15.75 9a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z" clip-rule="evenodd" /></svg>
-          </button>
-          <div id="profileWindow" class="dropdown-window hidden">
-            <h3 class="font-semibold mb-2 text-sm">Profile</h3>
-            <p class="text-xs mb-2 truncate">Welcome, {username || 'User'}!</p>
-            <button on:click={handleLogout} class="profile-dropdown-button logout-action-button text-xs px-2 py-1.5 rounded w-full text-left transition-colors duration-150">Logout</button>
-          </div>
-        </div>
-        <button id="darkModeToggle" aria-label="Toggle Dark Mode" class="darkmode-toggle-button ml-2 p-1.5 rounded-full transition-colors duration-150">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5">
-            {#if isDarkMode} <path fill-rule="evenodd" d="M9.528 1.718a.75.75 0 0 0-.103.103l1.132 1.132a.75.75 0 0 0 1.06 0l1.132-1.132a.75.75 0 0 0-.103-1.06l-1.132-1.132a.75.75 0 0 0-1.06 0L9.63 1.615a.75.75 0 0 0-.102.103ZM12 3.75a.75.75 0 0 1 .75.75v1.5a.75.75 0 0 1-1.5 0v-1.5a.75.75 0 0 1 .75-.75ZM18.282 5.282a.75.75 0 0 0-1.06 0l-1.132 1.132a.75.75 0 0 0 .103 1.06l1.132 1.132a.75.75 0 0 0 1.06 0l1.132-1.132a.75.75 0 0 0-.103-1.06l-1.132-1.132a.75.75 0 0 0 0-.103ZM19.5 12a.75.75 0 0 1-.75.75h-1.5a.75.75 0 0 1 0-1.5h1.5a.75.75 0 0 1 .75.75ZM18.282 18.718a.75.75 0 0 0 0 1.06l1.132 1.132a.75.75 0 0 0 1.06 0l1.132-1.132a.75.75 0 0 0-.103-1.06l-1.132-1.132a.75.75 0 0 0-1.06 0l-1.132 1.132a.75.75 0 0 0 .103.103ZM12 18.75a.75.75 0 0 1-.75.75h-1.5a.75.75 0 0 1 0-1.5h1.5a.75.75 0 0 1 .75.75ZM5.718 18.718a.75.75 0 0 0 1.06 0l1.132-1.132a.75.75 0 0 0-.103-1.06l-1.132-1.132a.75.75 0 0 0-1.06 0L4.586 17.686a.75.75 0 0 0 .103 1.06l1.132 1.132a.75.75 0 0 0 0 .103ZM4.5 12a.75.75 0 0 1 .75-.75h1.5a.75.75 0 0 1 0 1.5h-1.5a.75.75 0 0 1-.75-.75ZM5.718 5.282a.75.75 0 0 0 0-1.06l-1.132-1.132a.75.75 0 0 0-1.06 0L2.39 4.114a.75.75 0 0 0 .103 1.06l1.132 1.132a.75.75 0 0 0 1.06 0l1.132-1.132a.75.75 0 0 0-.103-.103ZM12 6.75a5.25 5.25 0 0 1 5.25 5.25 5.25 5.25 0 0 1-5.25 5.25 5.25 5.25 0 0 1-5.25-5.25 5.25 5.25 0 0 1 5.25-5.25Z" clip-rule="evenodd" />
-            {:else} <path fill-rule="evenodd" d="M10.5 3.75a6.75 6.75 0 1 0 0 13.5 6.75 6.75 0 0 0 0-13.5ZM12 16.5a4.5 4.5 0 1 1 0-9 4.5 4.5 0 0 1 0 9Z" clip-rule="evenodd" /> {/if}
-          </svg>
-        </button>
-      </div>
-    </header>
+	<AppHeader {isDarkMode} {username} {currentDateTime} on:toggleSidebar={toggleSidebar} on:toggleDarkMode={toggleDarkMode} on:logout={handleLogout} />
 
 		<main class="main-content flex-1 overflow-x-hidden overflow-y-auto p-4 md:p-6 relative">
       <h1 class="dashboard-title text-2xl font-bold mb-4">Dashboard</h1>
@@ -576,71 +436,6 @@
         background-color: #f3f4f6;
     }
 
-    /* --- Top Header --- */
-    .top-header {
-        position: fixed; top: 0; left: 0; right: 0;
-        width: 100%;
-        display: flex; align-items: center; justify-content: space-between;
-        padding: 0 1rem; height: 60px; z-index: 40;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-        transition: background-color 0.2s, border-color 0.2s;
-        background-color: #ffffff; 
-        border-bottom: 1px solid #e5e7eb;
-        color: #1f2937; 
-    }
-    .header-left { display: flex; align-items: center; gap: 0.75rem; }
-    .top-header .menu-btn {
-        background: none; border: none; cursor: pointer; padding: 0.5rem;
-        border-radius: 9999px; transition: background-color 0.15s ease;
-        display: flex; align-items: center; justify-content: center;
-        color: inherit; 
-    }
-    .top-header .menu-btn:hover { background-color: #f3f4f6; }
-    .top-header .logo span.top-header-logo-text { color: #1f2937; }
-
-    .top-header .header-icons { display: flex; align-items: center; gap: 0.25rem; }
-    .top-header .header-icons button,
-    .top-header .header-icons .relative > button {
-        background: none; border: none; cursor: pointer; padding: 0.5rem;
-        line-height: 0; display: flex; align-items: center; justify-content: center;
-        border-radius: 9999px; width: 36px; height: 36px;
-        transition: background-color 0.15s ease;
-        color: inherit;
-    }
-    .top-header .header-icons button:hover,
-    .top-header .header-icons .relative > button:hover {
-      background-color: #f3f4f6;
-    }
-    .darkmode-toggle-button { color: #374151; }
-    .darkmode-toggle-button:hover { background-color: #f3f4f6; }
-
-
-    /* --- Dropdown Windows --- */
-    .dropdown-window {
-        position: absolute; right: 0; top: calc(100% + 8px);
-        border-radius: 0.5rem; 
-        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-        padding: 0.75rem; 
-        width: 260px; 
-        z-index: 50;
-        opacity: 0; 
-        transform: translateY(-5px) scale(0.98);
-        transition: opacity 0.15s ease-out, transform 0.15s ease-out;
-        pointer-events: none; visibility: hidden;
-        background-color: #ffffff; 
-        border: 1px solid #e5e7eb; 
-        color: #374151; 
-    }
-    .dropdown-window:not(.hidden-dropdown) {
-        opacity: 1; transform: translateY(0) scale(1);
-        pointer-events: auto; visibility: visible;
-    }
-    .profile-dropdown-button.settings-button { background-color: #f3f4f6; color: #374151; }
-    .profile-dropdown-button.settings-button:hover { background-color: #e5e7eb; }
-    .profile-dropdown-button.logout-action-button { background-color: #fee2e2; color: #b91c1c; }
-    .profile-dropdown-button.logout-action-button:hover { background-color: #fecaca; }
-
-
     /* --- Main Content Area --- */
     .main-content {
         background-color: #f3f4f6;
@@ -714,33 +509,6 @@
     :global(body.dark) .logout-button:hover {
         background-color: #374151;
     }
-
-    :global(body.dark) .top-header { 
-        background-color: #1f2937; 
-        border-bottom-color: #374151;
-        color: #d1d5db; 
-    }
-    :global(body.dark) .top-header .logo span.top-header-logo-text { color: #f3f4f6; }
-    :global(body.dark) .top-header .menu-btn:hover { 
-        background-color: #374151; 
-    }
-    :global(body.dark) .top-header .header-icons button:hover,
-    :global(body.dark) .top-header .header-icons .relative > button:hover {
-      background-color: #374151;
-    }
-    :global(body.dark) .darkmode-toggle-button { color: #d1d5db; }
-    :global(body.dark) .darkmode-toggle-button:hover { background-color: #374151; }
-
-
-    :global(body.dark) .dropdown-window { 
-        background-color: #374151; 
-        border-color: #4b5563; 
-        color: #f3f4f6; 
-    }
-    :global(body.dark) .profile-dropdown-button.settings-button { background-color: #4b5563; color: #d1d5db; }
-    :global(body.dark) .profile-dropdown-button.settings-button:hover { background-color: #6b7280; }
-    :global(body.dark) .profile-dropdown-button.logout-action-button { background-color: #991b1b; color: #d1d5db; }
-    :global(body.dark) .profile-dropdown-button.logout-action-button:hover { background-color: #b91c1c; }
     
     :global(body.dark) .main-content {
         background-color: #18181b; 

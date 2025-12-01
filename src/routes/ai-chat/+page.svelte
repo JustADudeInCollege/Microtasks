@@ -5,6 +5,7 @@
   import { browser } from '$app/environment';
   import { fly } from 'svelte/transition';
   import { quintOut } from 'svelte/easing';
+  import AppHeader from '$lib/components/AppHeader.svelte';
 
   let username = "User";
   let isSidebarOpen = false;
@@ -54,19 +55,7 @@
     }
   }
 
-  // --- Header Dropdown functions ---
-  const topHeaderDropdownIds = ['notifWindow', 'helpWindow', 'profileWindow'];
-  function toggleHeaderWindow(id: string) {
-    const el = document.getElementById(id);
-    if (el) el.classList.toggle('hidden');
-  }
-  function closeOtherHeaderWindows(currentId: string) {
-    topHeaderDropdownIds.forEach(id => {
-      if (id !== currentId) {
-        document.getElementById(id)?.classList.add('hidden');
-      }
-    });
-  }
+
 
   // --- Lifecycle ---
   let globalClickListener: ((event: MouseEvent) => void) | null = null;
@@ -80,51 +69,25 @@
       isDarkMode = savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches);
       document.body.classList.toggle('dark', isDarkMode);
 
-      const darkModeButton = document.getElementById('darkModeToggle');
-      if (darkModeButton) darkModeButton.addEventListener('click', toggleDarkMode);
-
-      const setupIconListener = (iconId: string, windowId: string) => {
-        const iconElement = document.getElementById(iconId);
-        if (iconElement) {
-          iconElement.addEventListener('click', (e) => {
-            e.stopPropagation();
-            toggleHeaderWindow(windowId);
-            closeOtherHeaderWindows(windowId);
-          });
-        }
-      };
-      setupIconListener('bellIcon', 'notifWindow');
-      setupIconListener('helpIcon', 'helpWindow');
-      setupIconListener('profileIcon', 'profileWindow');
-
       // Update date/time
       updateDateTime();
       dateTimeInterval = setInterval(updateDateTime, 60000);
     }
 
-    // Global click handler
+    // Header icon listeners are now handled by the AppHeader component
+
+    // Global click handler for sidebar
     globalClickListener = (event: MouseEvent) => {
         const target = event.target as Node | null;
-        let isClickInsideDropdownTrigger = false;
-        const triggerIds = ['bellIcon', 'helpIcon', 'profileIcon'];
-        triggerIds.forEach(triggerId => {
-            const triggerEl = document.getElementById(triggerId);
-            if (triggerEl && triggerEl.contains(target)) isClickInsideDropdownTrigger = true;
-        });
-        let isClickInsideDropdownWindow = false;
-        topHeaderDropdownIds.forEach(windowId => {
-            const windowEl = document.getElementById(windowId);
-            if (windowEl && !windowEl.classList.contains('hidden') && windowEl.contains(target)) {
-                isClickInsideDropdownWindow = true;
-            }
-        });
-        if (!isClickInsideDropdownTrigger && !isClickInsideDropdownWindow) {
-            closeOtherHeaderWindows('');
-        }
-
         const sidebarEl = document.getElementById('sidebar');
         const hamburgerButton = document.getElementById('hamburgerButton');
-        if (sidebarEl && !sidebarEl.contains(target) && hamburgerButton && !hamburgerButton.contains(target) && isSidebarOpen) {
+        // Also check if click is on header icons/dropdowns - don't interfere with those
+        const headerIcons = ['bellIcon', 'helpIcon', 'profileIcon', 'notifWindow', 'helpWindow', 'profileWindow'];
+        const isClickOnHeader = headerIcons.some(id => {
+            const el = document.getElementById(id);
+            return el && el.contains(target);
+        });
+        if (!isClickOnHeader && sidebarEl && !sidebarEl.contains(target) && hamburgerButton && !hamburgerButton.contains(target) && isSidebarOpen) {
             closeSidebar();
         }
     };
@@ -184,12 +147,9 @@
 
             typingMsg.remove();
 
-            if (!response.ok) {
-              throw new Error(`API request failed with status ${response.status}`);
-            }
-
             const responseData = await response.json();
             const aiReply = responseData?.reply;
+            const isError = responseData?.error;
             const finalText = aiReply || "Hmm, I couldn't get a response this time.";
 
             let formattedText = finalText
@@ -200,7 +160,12 @@
               .replace(/\n/g, '<br>');
 
             const aiMsgElement = document.createElement('div');
-            aiMsgElement.className = `p-3 rounded-lg shadow-sm self-start w-max max-w-[85%] mb-3 break-words ${isDarkMode ? 'bg-zinc-700 text-zinc-200' : 'bg-white text-gray-800'}`;
+            // Use different styling if there was an error
+            if (isError) {
+              aiMsgElement.className = `p-3 rounded-lg shadow-sm self-start w-max max-w-[85%] mb-3 break-words ${isDarkMode ? 'bg-amber-900 text-amber-200' : 'bg-amber-100 text-amber-800'}`;
+            } else {
+              aiMsgElement.className = `p-3 rounded-lg shadow-sm self-start w-max max-w-[85%] mb-3 break-words ${isDarkMode ? 'bg-zinc-700 text-zinc-200' : 'bg-white text-gray-800'}`;
+            }
             aiMsgElement.innerHTML = formattedText;
 
             chatMessages.appendChild(aiMsgElement);
@@ -241,13 +206,7 @@
     };
   });
 
-  onDestroy(() => {
-    if (browser) {
-        const darkModeButton = document.getElementById('darkModeToggle');
-        if (darkModeButton) darkModeButton.removeEventListener('click', toggleDarkMode);
-        // Potentially remove listeners from bellIcon, helpIcon, profileIcon if they were added directly
-    }
-  });
+
 </script>
 
 <div class={`flex h-screen font-sans ${isDarkMode ? 'dark bg-zinc-900 text-zinc-300' : 'bg-gray-100 text-gray-800'}`}>
@@ -259,9 +218,14 @@
     transition:fly={{ x: -300, duration: 300, easing: quintOut }}
   >
     <div>
-      <div class="flex items-center gap-2 mb-8 pb-4 border-b ${isDarkMode ? 'border-zinc-700' : 'border-gray-200'}">
-        <img src={isDarkMode ? "/logonamindarkmode.png" : "/logonamin.png"} alt="Microtask Logo" class="w-8 h-8" />
-        <h1 class={`text-xl font-bold ${isDarkMode ? 'text-zinc-100' : 'text-gray-800'}`}>Microtask</h1>
+      <div class={`flex items-center justify-between mb-8 pb-4 border-b ${isDarkMode ? 'border-zinc-700' : 'border-gray-200'}`}>
+        <div class="flex items-center gap-2">
+          <img src={isDarkMode ? "/logonamindarkmode.png" : "/logonamin.png"} alt="Microtask Logo" class="w-8 h-8" />
+          <h1 class={`text-xl font-bold ${isDarkMode ? 'text-zinc-100' : 'text-gray-800'}`}>Microtask</h1>
+        </div>
+        <button on:click={closeSidebar} class={`p-1 rounded-md transition-colors ${isDarkMode ? 'hover:bg-zinc-700 text-zinc-400' : 'hover:bg-gray-100 text-gray-500'}`} aria-label="Close sidebar">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+        </button>
       </div>
         <nav class="flex flex-col gap-2">
           <a href="/home"
@@ -329,57 +293,7 @@
   {/if}
 
   <div class="flex-1 flex flex-col overflow-hidden">
-  <header class={`top-header ${isDarkMode ? 'bg-zinc-800 border-zinc-700' : 'bg-white border-gray-200'}`}>
-    <div class="header-left">
-      <button id="hamburgerButton" class="menu-btn" on:click={toggleSidebar} aria-label="Toggle Sidebar">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" /></svg>
-      </button>
-      <a href="/home" class="logo">
-        <img src={isDarkMode ? "/logonamindarkmode.png" : "/logonamin.png"} alt="Microtask Logo" class="h-8 w-auto">
-        <span class={`${isDarkMode ? 'text-zinc-100' : 'text-gray-800'}`}>Microtask</span>
-      </a>
-    </div>
-    <div class="flex items-center gap-2 {isDarkMode ? 'text-zinc-300' : 'text-gray-600'}">
-      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" /></svg>
-      <span class="text-sm font-medium">{currentDateTime}</span>
-    </div>
-    <div class="header-icons">
-        <div class="relative">
-          <button id="bellIcon" aria-label="Notifications">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5" aria-hidden="true"><path fill-rule="evenodd" d="M5.25 9a6.75 6.75 0 0113.5 0v.75c0 2.123.8 4.057 2.118 5.52a.75.75 0 01-.297 1.206c-1.544.57-3.16.99-4.831 1.243a3.75 3.75 0 11-7.48 0c-1.673-.253-3.287-.673-4.831-1.243a.75.75 0 01-.297-1.206C4.45 13.807 5.25 11.873 5.25 9.75V9zm4.502 8.9a2.25 2.25 0 104.496 0H9.752z" clip-rule="evenodd" /></svg>
-          </button>
-          <div id="notifWindow" class={`dropdown-window hidden ${isDarkMode ? 'bg-zinc-700 border-zinc-600 text-zinc-300' : 'bg-white border-gray-200 text-gray-700'}`}>
-            <h3 class="font-semibold mb-2 text-sm">Notifications</h3><p class="text-xs">No new notifications.</p>
-          </div>
-        </div>
-        <div class="relative">
-          <button id="helpIcon" aria-label="Help & FAQ">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5" aria-hidden="true"><path fill-rule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12zm8.706-1.442c1.146-.573 2.437.463 2.126 1.706l-.709 2.836.042-.02a.75.75 0 01.67 1.34l-.042.022c-1.147.573-2.438-.463-2.127-1.706l.71-2.836-.042.02a.75.75 0 11-.671-1.34l.041-.022zM12 9a.75.75 0 100-1.5.75.75 0 000 1.5z" clip-rule="evenodd" /></svg>
-          </button>
-          <div id="helpWindow" class={`dropdown-window hidden ${isDarkMode ? 'bg-zinc-700 border-zinc-600 text-zinc-300' : 'bg-white border-gray-200 text-gray-700'}`}>
-            <h3 class="font-semibold mb-2 text-sm">FAQ</h3>
-            <ul class="list-disc list-inside space-y-1 text-xs"><li>How do I use AI Chat?</li><li>Where is my profile?</li></ul>
-            <a href="/support" class="text-xs text-blue-600 hover:underline mt-2 block">Visit Support</a>
-          </div>
-        </div>
-        <div class="relative">
-          <button id="profileIcon" aria-label="Profile Menu">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5" aria-hidden="true"><path fill-rule="evenodd" d="M18.685 19.097A9.723 9.723 0 0021.75 12c0-5.385-4.365-9.75-9.75-9.75S2.25 6.615 2.25 12a9.723 9.723 0 003.065 7.097A9.716 9.716 0 0012 21.75a9.716 9.716 0 006.685-2.653zm-12.54-1.285A7.486 7.486 0 0112 15a7.486 7.486 0 015.855 2.812A8.224 8.224 0 0112 20.25a8.224 8.224 0 01-5.855-2.438zM15.75 9a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z" clip-rule="evenodd" /></svg>
-          </button>
-          <div id="profileWindow" class={`dropdown-window hidden ${isDarkMode ? 'bg-zinc-700 border-zinc-600 text-zinc-300' : 'bg-white border-gray-200 text-gray-700'}`}>
-            <h3 class="font-semibold mb-2 text-sm">Profile</h3>
-            <p class="text-xs mb-2 truncate">Welcome, {username || 'User'}!</p>
-            <button on:click={handleLogout} class={`text-xs px-2 py-1.5 rounded w-full text-left transition-colors duration-150 ${isDarkMode ? 'bg-red-700 hover:bg-red-600 text-zinc-300' : 'bg-red-100 hover:bg-red-200 text-red-700'}`}>Logout</button>
-          </div>
-        </div>
-        <button id="darkModeToggle" aria-label="Toggle Dark Mode" class={`ml-2 p-1.5 rounded-full transition-colors duration-150 ${isDarkMode ? 'hover:bg-zinc-700 text-zinc-300' : 'hover:bg-gray-100 text-gray-700'}`}>
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5">
-            {#if isDarkMode} <path fill-rule="evenodd" d="M9.528 1.718a.75.75 0 0 0-.103.103l1.132 1.132a.75.75 0 0 0 1.06 0l1.132-1.132a.75.75 0 0 0-.103-1.06l-1.132-1.132a.75.75 0 0 0-1.06 0L9.63 1.615a.75.75 0 0 0-.102.103ZM12 3.75a.75.75 0 0 1 .75.75v1.5a.75.75 0 0 1-1.5 0v-1.5a.75.75 0 0 1 .75-.75ZM18.282 5.282a.75.75 0 0 0-1.06 0l-1.132 1.132a.75.75 0 0 0 .103 1.06l1.132 1.132a.75.75 0 0 0 1.06 0l1.132-1.132a.75.75 0 0 0-.103-1.06l-1.132-1.132a.75.75 0 0 0 0-.103ZM19.5 12a.75.75 0 0 1-.75.75h-1.5a.75.75 0 0 1 0-1.5h1.5a.75.75 0 0 1 .75.75ZM18.282 18.718a.75.75 0 0 0 0 1.06l1.132 1.132a.75.75 0 0 0 1.06 0l1.132-1.132a.75.75 0 0 0-.103-1.06l-1.132-1.132a.75.75 0 0 0-1.06 0l-1.132 1.132a.75.75 0 0 0 .103.103ZM12 18.75a.75.75 0 0 1-.75.75h-1.5a.75.75 0 0 1 0-1.5h1.5a.75.75 0 0 1 .75.75ZM5.718 18.718a.75.75 0 0 0 1.06 0l1.132-1.132a.75.75 0 0 0-.103-1.06l-1.132-1.132a.75.75 0 0 0-1.06 0L4.586 17.686a.75.75 0 0 0 .103 1.06l1.132 1.132a.75.75 0 0 0 0 .103ZM4.5 12a.75.75 0 0 1 .75-.75h1.5a.75.75 0 0 1 0 1.5h-1.5a.75.75 0 0 1-.75-.75ZM5.718 5.282a.75.75 0 0 0 0-1.06l-1.132-1.132a.75.75 0 0 0-1.06 0L2.39 4.114a.75.75 0 0 0 .103 1.06l1.132 1.132a.75.75 0 0 0 1.06 0l1.132-1.132a.75.75 0 0 0-.103-.103ZM12 6.75a5.25 5.25 0 0 1 5.25 5.25 5.25 5.25 0 0 1-5.25 5.25 5.25 5.25 0 0 1-5.25-5.25 5.25 5.25 0 0 1 5.25-5.25Z" clip-rule="evenodd" />
-            {:else} <path fill-rule="evenodd" d="M10.5 3.75a6.75 6.75 0 1 0 0 13.5 6.75 6.75 0 0 0 0-13.5ZM12 16.5a4.5 4.5 0 1 1 0-9 4.5 4.5 0 0 1 0 9Z" clip-rule="evenodd" /> {/if}
-          </svg>
-        </button>
-      </div>
-    </header>
+    <AppHeader {isDarkMode} {username} {currentDateTime} on:toggleSidebar={toggleSidebar} on:toggleDarkMode={toggleDarkMode} on:logout={handleLogout} />
 
     <!-- Main Content Area for AI Chat -->
     <div class="flex-1 flex flex-col overflow-y-auto pt-[60px]"> 
@@ -432,57 +346,7 @@
   :global(.dark) ::-webkit-scrollbar-thumb:hover { background: #718096; }
   :global(.dark) .custom-scrollbar { scrollbar-color: #4a5568 #2d3748; }
 
-  /* Header Styles (copied & adapted from previous combined styles) */
-  .top-header {
-    position: fixed; top: 0; left: 0; right: 0;
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 0 1rem; height: 60px; z-index: 40; /* Lowered z-index from sidebar */
-    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-    transition: background-color 0.2s, border-color 0.2s;
-  }
-  .header-left { display: flex; align-items: center; gap: 0.75rem; }
-  .top-header .menu-btn {
-    background: none; border: none; cursor: pointer; padding: 0.5rem;
-    border-radius: 9999px; transition: background-color 0.15s ease;
-    display: flex; align-items: center; justify-content: center;
-  }
-  .top-header .menu-btn:hover { background-color: #f3f4f6; }
-  :global(.dark) .top-header .menu-btn:hover { background-color: #374151; }
-  .top-header .menu-btn svg { /* For SVG Hamburger */
-      width: 1.5rem; height: 1.5rem; display: block;
-  }
 
-  .top-header .logo { display: flex; align-items: center; gap: 0.5rem; font-weight: 600; font-size: 1.125rem; text-decoration: none; }
-  .top-header .logo img { height: 2rem; width: auto; }
-
-  .top-header .header-icons { display: flex; align-items: center; gap: 0.25rem; }
-  .top-header .header-icons button {
-    background: none; border: none; cursor: pointer; padding: 0.5rem;
-    line-height: 0; display: flex; align-items: center; justify-content: center;
-    border-radius: 9999px; width: 36px; height: 36px;
-    transition: background-color 0.15s ease;
-  }
-  .top-header .header-icons button:hover { background-color: #f3f4f6; }
-  :global(.dark) .top-header .header-icons button:hover { background-color: #374151; }
-  .top-header .header-icons svg { /* For SVG icons in header */
-    height: 1.25rem; width: 1.25rem; opacity: 0.9;
-  }
-   :global(.dark) .top-header .header-icons svg {
-    fill: #d1d5db; /* text-zinc-300 */
-  }
-
-
-  .relative { position: relative; }
-  .dropdown-window {
-    position: absolute; right: 0; top: calc(100% + 8px);
-    border-radius: 0.5rem; box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-    padding: 0.75rem; width: 260px; z-index: 50;
-    opacity: 0; transform: translateY(-5px) scale(0.98);
-    transition: opacity 0.15s ease-out, transform 0.15s ease-out, visibility 0s linear 0.15s;
-    pointer-events: none; visibility: hidden;
-  }
-  .dropdown-window:not(.hidden) { opacity: 1; transform: translateY(0) scale(1); pointer-events: auto; visibility: visible; transition-delay: 0s; }
-  .hidden { display: none !important; }
 
   /* Ensure SVGs in active sidebar links are white */
   :global(aside nav a.bg-blue-600 svg), :global(aside nav a.bg-blue-700 svg) {

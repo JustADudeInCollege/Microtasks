@@ -5,12 +5,12 @@
   import { browser } from '$app/environment';
   import { fly, fade, scale } from 'svelte/transition';
   import { quintOut } from 'svelte/easing';
+  import AppHeader from '$lib/components/AppHeader.svelte';
 
   // Firebase imports
-  import { auth, db, storage } from '$lib/firebase.js';
+  import { auth, db } from '$lib/firebase.js';
   import { updateProfile, deleteUser, onAuthStateChanged, type User as FirebaseUser } from 'firebase/auth';
   import { doc, getDoc, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
-  import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 
   // --- Global App State ---
   let isSidebarOpen = false;
@@ -38,7 +38,7 @@
   let initialDisplayName = "";    
   
   let profilePictureFile: File | null = null;
-  let currentProfilePictureUrl: string | null = null; 
+  let profilePictureBase64: string | null = null;
   let profilePicturePreview = "https://via.placeholder.com/150/CCCCCC/808080?Text=Avatar";
 
   let isLoadingSave = false;
@@ -141,7 +141,6 @@
       displayNameInput = user.displayName || "";   
       initialDisplayName = displayNameInput;       
 
-      currentProfilePictureUrl = user.photoURL;
       profilePicturePreview = user.photoURL || "https://via.placeholder.com/150/CCCCCC/808080?Text=Avatar";
       
       // If your `credentials` collection stores a `username` that can be different from Auth's displayName
@@ -154,6 +153,12 @@
         // displayNameInput = credData.username || displayNameInput;
         // initialDisplayName = displayNameInput; // Update initial if fetched from Firestore
         // globalUsername = credData.username || globalUsername; // Update global display
+        
+        // Load saved profile picture from Firestore
+        if (credSnap.exists() && credSnap.data().photoBase64) {
+          profilePictureBase64 = credSnap.data().photoBase64;
+          profilePicturePreview = credSnap.data().photoBase64;
+        }
       }
     } catch (error) {
       console.error("Error loading profile:", error);
@@ -164,11 +169,65 @@
     }
   }
 
+  // Compress and convert image to Base64
+  async function compressImageToBase64(file: File, maxWidth = 200, quality = 0.7): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+        
+        // Scale down to maxWidth (keep aspect ratio)
+        if (width > maxWidth) {
+          height = (height * maxWidth) / width;
+          width = maxWidth;
+        }
+        
+        canvas.width = width;
+        canvas.height = height;
+        
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          reject(new Error('Could not get canvas context'));
+          return;
+        }
+        
+        ctx.drawImage(img, 0, 0, width, height);
+        const base64 = canvas.toDataURL('image/jpeg', quality);
+        URL.revokeObjectURL(img.src);
+        
+        // Check size (Firestore has 1MB doc limit, keep image under 500KB to be safe)
+        if (base64.length > 500000) {
+          reject(new Error('Image too large. Please use a smaller image.'));
+          return;
+        }
+        
+        resolve(base64);
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(img.src);
+        reject(new Error('Could not load image'));
+      };
+      img.src = URL.createObjectURL(file);
+    });
+  }
+
   function handleProfilePictureInputChange(event: Event) {
     const target = event.target as HTMLInputElement;
     const file = target.files?.[0];
     if (file) {
-      profilePictureFile = file; 
+      // Validate file type
+      if (!file.type.startsWith('image/')) {
+        profileFormMessage = "Please select a valid image file.";
+        profileFormMessageType = "error";
+        target.value = '';
+        return;
+      }
+      
+      profilePictureFile = file;
+      
+      // Show preview immediately
       const reader = new FileReader();
       reader.onload = (e) => {
         if (e.target?.result) {
@@ -176,7 +235,7 @@
         }
       };
       reader.readAsDataURL(file);
-      profileFormMessage = ""; 
+      profileFormMessage = "";
     }
   }
 
@@ -202,32 +261,40 @@
     profileFormMessageType = "";
 
     try {
-      let newPhotoURL = currentProfilePictureUrl; 
-
+      let newPhotoBase64 = profilePictureBase64;
+      
+      // Compress and convert new profile picture to Base64
       if (profilePictureFile) {
-        const filePath = `profilePictures/${currentUid}/${profilePictureFile.name}_${Date.now()}`;
-        const storageRef = ref(storage, filePath);
-        const snapshot = await uploadBytes(storageRef, profilePictureFile);
-        newPhotoURL = await getDownloadURL(snapshot.ref);
+        profileFormMessage = "Processing image...";
+        try {
+          newPhotoBase64 = await compressImageToBase64(profilePictureFile, 200, 0.7);
+        } catch (imgError: any) {
+          profileFormMessage = imgError.message || "Failed to process image.";
+          profileFormMessageType = "error";
+          isLoadingSave = false;
+          return;
+        }
       }
 
+      profileFormMessage = "Saving...";
+      
       await updateProfile(auth.currentUser, {
-        displayName: displayNameInput,
-        photoURL: newPhotoURL 
+        displayName: displayNameInput
       });
 
       const userDocRef = doc(db, "credentials", currentUid);
       await setDoc(userDocRef, { 
-        username: displayNameInput, 
-        photoURL: newPhotoURL,
-        uid: currentUid 
+        username: displayNameInput,
+        usernameLower: displayNameInput.toLowerCase(), // For case-insensitive login
+        uid: currentUid,
+        photoBase64: newPhotoBase64
       }, { merge: true }); 
       
-      globalUsername = displayNameInput; // Update header display
+      globalUsername = displayNameInput;
       initialDisplayName = displayNameInput;
-      currentProfilePictureUrl = newPhotoURL;
-      profilePicturePreview = newPhotoURL || "https://via.placeholder.com/150/CCCCCC/808080?Text=Avatar";
-      profilePictureFile = null; 
+      profilePictureBase64 = newPhotoBase64;
+      profilePicturePreview = newPhotoBase64 || "https://via.placeholder.com/150/CCCCCC/808080?Text=Avatar";
+      profilePictureFile = null;
 
       if (browser) saveGlobalUsernameToLocalStorage(globalUsername); 
 
@@ -263,14 +330,6 @@
       const userDocRef = doc(db, "credentials", currentUid);
       await deleteDoc(userDocRef);
       
-      if (currentProfilePictureUrl && currentProfilePictureUrl.includes('firebasestorage.googleapis.com')) {
-        try {
-          const photoRef = ref(storage, currentProfilePictureUrl);
-          await deleteObject(photoRef);
-        } catch (storageError) {
-          console.warn("Could not delete profile picture from storage:", storageError);
-        }
-      }
       // !!! IMPORTANT: Add logic here to delete other user-specific data from Firestore (tasks, notes, etc.) !!!
       // Example (conceptual):
       // const tasksQuery = query(collection(db, 'tasks'), where('userId', '==', currentUid));
@@ -300,7 +359,13 @@
     }
   }
 
-  function toggleDarkMode() { /* ... as before ... */ }
+  function toggleDarkMode() {
+    isDarkMode = !isDarkMode;
+    if (browser) {
+      document.body.classList.toggle('dark', isDarkMode);
+      localStorage.setItem('theme', isDarkMode ? 'dark' : 'light');
+    }
+  }
   function toggleSidebar() { isSidebarOpen = !isSidebarOpen; }
   function closeSidebar() { isSidebarOpen = false; }
   function toggleWindow(id: string) { /* ... as before ... */ }
@@ -320,8 +385,6 @@
       });
     } 
   }
-  
-  const handleEscKey = (event: KeyboardEvent) => { /* ... as before ... */ };
 
   function updateDateTime() {
     const now = new Date();
@@ -367,35 +430,13 @@
       loadAccessibilitySettings();
     }
 
-    const setupIconListener = (iconId: string, windowId: string) => {
-        const iconElement = document.getElementById(iconId);
-        if (iconElement) {
-          iconElement.addEventListener('click', (e) => {
-            e.stopPropagation();
-            toggleWindow(windowId);
-            closeOtherWindows(windowId);
-          });
-        }
-    };
-    setupIconListener('bellIcon', 'notifWindow');
-    setupIconListener('helpIcon', 'helpWindow');
-    setupIconListener('profileIcon', 'profileWindow');
-    const darkModeButton = document.getElementById('darkModeToggle');
-    if (darkModeButton) darkModeButton.addEventListener('click', toggleDarkMode);
-    
     // Update date/time
     updateDateTime();
     dateTimeInterval = setInterval(updateDateTime, 60000);
-    
-    const handleGlobalClick = (event: MouseEvent) => { /* ... (global click logic) ... */};
-    document.addEventListener('click', handleGlobalClick);
-    document.addEventListener('keydown', handleEscKey);
 
     return () => {
       unsubscribeAuth();
       if (dateTimeInterval) clearInterval(dateTimeInterval);
-      document.removeEventListener('click', handleGlobalClick);
-      document.removeEventListener('keydown', handleEscKey);
     };
   });
 </script>
@@ -421,9 +462,14 @@
       transition:fly={{ x: -300, duration: 300, easing: quintOut }}
     >
       <div>
-        <div class="flex items-center gap-2 mb-8 pb-4 border-b ${isDarkMode ? 'border-zinc-700' : 'border-gray-200'}">
-          <img src="/logonamin.png" alt="Microtask Logo" class="w-8 h-8" />
-          <h1 class={`text-xl font-bold ${isDarkMode ? 'text-zinc-100' : 'text-gray-800'}`}>Microtask</h1>
+        <div class={`flex items-center justify-between mb-8 pb-4 border-b ${isDarkMode ? 'border-zinc-700' : 'border-gray-200'}`}>
+          <div class="flex items-center gap-2">
+            <img src={isDarkMode ? "/logonamindarkmode.png" : "/logonamin.png"} alt="Microtask Logo" class="w-8 h-8" />
+            <h1 class={`text-xl font-bold ${isDarkMode ? 'text-zinc-100' : 'text-gray-800'}`}>Microtask</h1>
+          </div>
+          <button on:click={closeSidebar} class={`p-1 rounded-md transition-colors ${isDarkMode ? 'hover:bg-zinc-700 text-zinc-400' : 'hover:bg-gray-100 text-gray-500'}`} aria-label="Close sidebar">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+          </button>
         </div>
         <nav class="flex flex-col gap-2">
           <!-- Sidebar Links -->
@@ -461,60 +507,7 @@
   {/if}
 
   <div class="flex-1 flex flex-col overflow-hidden">
-    <!-- Header HTML (from your previous code, using globalUsername) -->
-    <header class={`top-header ${isDarkMode ? 'bg-zinc-800 border-zinc-700' : 'bg-white border-gray-200'}`}>
-      <div class="header-left">
-        <button id="hamburgerButton" class="menu-btn" on:click={toggleSidebar} aria-label="Toggle Sidebar">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" /></svg>
-        </button>
-        <a href="/home" class="logo">
-          <img src="/logonamin.png" alt="Microtask Logo" class="h-8 w-auto">
-          <span class={`${isDarkMode ? 'text-zinc-100' : 'text-gray-800'}`}>Microtask</span>
-        </a>
-        <div class="flex items-center gap-2 ml-6 {isDarkMode ? 'text-zinc-300' : 'text-gray-600'}">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" /></svg>
-          <span class="text-sm font-medium">{currentDateTime}</span>
-        </div>
-      </div>
-      <div class="header-icons">
-        <!-- Bell, Help, Profile, Dark Mode Icons (structure as before) -->
-        <div class="relative">
-          <button id="bellIcon" aria-label="Notifications">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5" aria-hidden="true"><path fill-rule="evenodd" d="M5.25 9a6.75 6.75 0 0113.5 0v.75c0 2.123.8 4.057 2.118 5.52a.75.75 0 01-.297 1.206c-1.544.57-3.16.99-4.831 1.243a3.75 3.75 0 11-7.48 0c-1.673-.253-3.287-.673-4.831-1.243a.75.75 0 01-.297-1.206C4.45 13.807 5.25 11.873 5.25 9.75V9zm4.502 8.9a2.25 2.25 0 104.496 0H9.752z" clip-rule="evenodd" /></svg>
-          </button>
-          <div id="notifWindow" class={`dropdown-window hidden ${isDarkMode ? 'bg-zinc-700 border-zinc-600 text-zinc-300' : 'bg-white border-gray-200 text-gray-700'}`}>
-            <h3 class="font-semibold mb-2 text-sm">Notifications</h3><p class="text-xs">No new notifications.</p>
-          </div>
-        </div>
-        <div class="relative">
-          <button id="helpIcon" aria-label="Help & FAQ">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5" aria-hidden="true"><path fill-rule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12zm8.706-1.442c1.146-.573 2.437.463 2.126 1.706l-.709 2.836.042-.02a.75.75 0 01.67 1.34l-.042.022c-1.147.573-2.438-.463-2.127-1.706l.71-2.836-.042.02a.75.75 0 11-.671-1.34l.041-.022zM12 9a.75.75 0 100-1.5.75.75 0 000 1.5z" clip-rule="evenodd" /></svg>
-          </button>
-          <div id="helpWindow" class={`dropdown-window hidden ${isDarkMode ? 'bg-zinc-700 border-zinc-600 text-zinc-300' : 'bg-white border-gray-200 text-gray-700'}`}>
-            <h3 class="font-semibold mb-2 text-sm">FAQ</h3>
-            <ul class="list-disc list-inside space-y-1 text-xs"><li>How do I add a task?</li><li>Where is the calendar?</li></ul>
-            <a href="/support" class="text-xs text-blue-600 hover:underline mt-2 block">Visit Support</a>
-          </div>
-        </div>
-        <div class="relative">
-          <button id="profileIcon" aria-label="Profile Menu">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5" aria-hidden="true"><path fill-rule="evenodd" d="M18.685 19.097A9.723 9.723 0 0021.75 12c0-5.385-4.365-9.75-9.75-9.75S2.25 6.615 2.25 12a9.723 9.723 0 003.065 7.097A9.716 9.716 0 0012 21.75a9.716 9.716 0 006.685-2.653zm-12.54-1.285A7.486 7.486 0 0112 15a7.486 7.486 0 015.855 2.812A8.224 8.224 0 0112 20.25a8.224 8.224 0 01-5.855-2.438zM15.75 9a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z" clip-rule="evenodd" /></svg>
-          </button>
-          <div id="profileWindow" class={`dropdown-window hidden ${isDarkMode ? 'bg-zinc-700 border-zinc-600 text-zinc-300' : 'bg-white border-gray-200 text-gray-700'}`}>
-            <h3 class="font-semibold mb-2 text-sm">Profile</h3>
-            <p class="text-xs mb-2 truncate">Welcome, {globalUsername || 'User'}!</p>
-            <a href="/settings" class={`block text-xs px-2 py-1.5 rounded w-full text-left mb-1 transition-colors duration-150 ${isDarkMode ? 'bg-zinc-600 hover:bg-zinc-500 text-zinc-300' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}>Settings</a>
-            <button on:click={handleLogout} class={`text-xs px-2 py-1.5 rounded w-full text-left transition-colors duration-150 ${isDarkMode ? 'bg-red-700 hover:bg-red-600 text-zinc-300' : 'bg-red-100 hover:bg-red-200 text-red-700'}`}>Logout</button>
-          </div>
-        </div>
-        <button id="darkModeToggle" aria-label="Toggle Dark Mode" class={`ml-2 p-1.5 rounded-full transition-colors duration-150 ${isDarkMode ? 'hover:bg-zinc-700 text-zinc-300' : 'hover:bg-gray-100 text-gray-700'}`}>
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5">
-            {#if isDarkMode} <path fill-rule="evenodd" d="M9.528 1.718a.75.75 0 0 0-.103.103l1.132 1.132a.75.75 0 0 0 1.06 0l1.132-1.132a.75.75 0 0 0-.103-1.06l-1.132-1.132a.75.75 0 0 0-1.06 0L9.63 1.615a.75.75 0 0 0-.102.103ZM12 3.75a.75.75 0 0 1 .75.75v1.5a.75.75 0 0 1-1.5 0v-1.5a.75.75 0 0 1 .75-.75ZM18.282 5.282a.75.75 0 0 0-1.06 0l-1.132 1.132a.75.75 0 0 0 .103 1.06l1.132 1.132a.75.75 0 0 0 1.06 0l1.132-1.132a.75.75 0 0 0-.103-1.06l-1.132-1.132a.75.75 0 0 0 0-.103ZM19.5 12a.75.75 0 0 1-.75.75h-1.5a.75.75 0 0 1 0-1.5h1.5a.75.75 0 0 1 .75.75ZM18.282 18.718a.75.75 0 0 0 0 1.06l1.132 1.132a.75.75 0 0 0 1.06 0l1.132-1.132a.75.75 0 0 0-.103-1.06l-1.132-1.132a.75.75 0 0 0-1.06 0l-1.132 1.132a.75.75 0 0 0 .103.103ZM12 18.75a.75.75 0 0 1-.75.75h-1.5a.75.75 0 0 1 0-1.5h1.5a.75.75 0 0 1 .75.75ZM5.718 18.718a.75.75 0 0 0 1.06 0l1.132-1.132a.75.75 0 0 0-.103-1.06l-1.132-1.132a.75.75 0 0 0-1.06 0L4.586 17.686a.75.75 0 0 0 .103 1.06l1.132 1.132a.75.75 0 0 0 0 .103ZM4.5 12a.75.75 0 0 1 .75-.75h1.5a.75.75 0 0 1 0 1.5h-1.5a.75.75 0 0 1-.75-.75ZM5.718 5.282a.75.75 0 0 0 0-1.06l-1.132-1.132a.75.75 0 0 0-1.06 0L2.39 4.114a.75.75 0 0 0 .103 1.06l1.132 1.132a.75.75 0 0 0 1.06 0l1.132-1.132a.75.75 0 0 0-.103-.103ZM12 6.75a5.25 5.25 0 0 1 5.25 5.25 5.25 5.25 0 0 1-5.25 5.25 5.25 5.25 0 0 1-5.25-5.25 5.25 5.25 0 0 1 5.25-5.25Z" clip-rule="evenodd" />
-            {:else} <path fill-rule="evenodd" d="M10.5 3.75a6.75 6.75 0 1 0 0 13.5 6.75 6.75 0 0 0 0-13.5ZM12 16.5a4.5 4.5 0 1 1 0-9 4.5 4.5 0 0 1 0 9Z" clip-rule="evenodd" /> {/if}
-          </svg>
-        </button>
-      </div>
-    </header>
+    <AppHeader {isDarkMode} username={globalUsername} {currentDateTime} on:toggleSidebar={toggleSidebar} on:toggleDarkMode={toggleDarkMode} on:logout={handleLogout} />
 
     <div class="flex-1 overflow-y-auto pt-[60px] flex flex-col custom-scrollbar">
       <div class="settings-page">
@@ -530,7 +523,9 @@
               <div class="profile-picture-controls">
                 <img src={profilePicturePreview} alt="Profile Preview" class="profile-preview" />
                 <input type="file" id="profilePictureInput" accept="image/*" on:change={handleProfilePictureInputChange} style="display: none;" />
-                <label for="profilePictureInput" class="button button-secondary upload-button" role="button" tabindex="0" on:keypress={(e) => {if (e.key === 'Enter' || e.key === ' ') document.getElementById('profilePictureInput')?.click()}}>Choose Image</label>
+                <button type="button" class="button button-secondary upload-button" on:click={() => document.getElementById('profilePictureInput')?.click()}>
+                  Choose Image
+                </button>
               </div>
             </div>
 
@@ -677,27 +672,7 @@
   :global(.dark) ::-webkit-scrollbar-thumb:hover { background: #718096; }
   :global(.dark) .custom-scrollbar { scrollbar-color: #4a5568 #2d3748; }
 
-  /* Top Header Styles */
-  .top-header {position: fixed; top: 0; left: 0; right: 0; display: flex; align-items: center; justify-content: space-between; padding: 0 1rem; height: 60px; z-index: 40; box-shadow: 0 1px 3px rgba(0,0,0,0.05); transition: background-color 0.2s, border-color 0.2s;}
-  .top-header, .top-header .menu-btn, .top-header .logo span, .top-header .header-icons button svg {color: #1f2937;}
-  :global(.dark) .top-header, :global(.dark) .top-header .menu-btn, :global(.dark) .top-header .logo span, :global(.dark) .top-header .header-icons button svg {color: #f3f4f6;}
-  :global(.dark) .top-header { background-color: #1f2937; border-bottom-color: #374151; }
-  /* Light mode header background is set by class: bg-white in HTML */
-  .header-left { display: flex; align-items: center; gap: 0.75rem; }
-  .top-header .menu-btn {background: none; border: none; cursor: pointer; padding: 0.5rem; border-radius: 9999px; transition: background-color 0.15s ease; display: flex; align-items: center; justify-content: center;}
-  .top-header .menu-btn:hover { background-color: #f3f4f6; } 
-  :global(.dark) .top-header .menu-btn:hover { background-color: #374151; } 
-  .top-header .logo {display: flex; align-items: center; gap: 0.5rem; font-weight: 600; font-size: 1.125rem; text-decoration: none;}
-  .top-header .logo img { height: 2rem; width: auto; } 
-  .top-header .header-icons { display: flex; align-items: center; gap: 0.25rem; }
-  .top-header .header-icons button {background: none; border: none; cursor: pointer; padding: 0.5rem; line-height: 0; display: flex; align-items: center; justify-content: center; border-radius: 9999px; width: 36px; height: 36px; transition: background-color 0.15s ease;}
-  .top-header .header-icons button:hover { background-color: #f3f4f6; } 
-  :global(.dark) .top-header .header-icons button:hover { background-color: #374151; } 
-  .relative { position: relative; }
-  .dropdown-window {position: absolute; right: 0; top: calc(100% + 8px); border-radius: 0.5rem; box-shadow: 0 4px 12px rgba(0,0,0,0.1); padding: 0.75rem; width: 260px; z-index: 50; opacity: 0; transform: translateY(-5px) scale(0.98); transition: opacity 0.15s ease-out, transform 0.15s ease-out; pointer-events: none; visibility: hidden;}
-  .dropdown-window:not(.hidden) {opacity: 1; transform: translateY(0) scale(1); pointer-events: auto; visibility: visible;}
-  :global(.dark) .dropdown-window { background-color: #374151; border-color: #4b5563; color: #f3f4f6; }
-  .hidden { display: none !important; }
+
   
   /* Settings Page Specific Styles */
   .settings-page {max-width: 800px; margin: 2rem auto; padding: 1rem 2rem; flex-grow: 1; display: flex; flex-direction: column;}

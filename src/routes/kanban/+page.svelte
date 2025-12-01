@@ -11,6 +11,7 @@
     export let data: PageData;
     import TaskDetailModal from '$lib/components/TaskDetailModal.svelte';
     import LoadingIndicator from '$lib/components/LoadingIndicator.svelte';
+    import AppHeader from '$lib/components/AppHeader.svelte';
     import type { TaskForFrontend } from '$lib/types/task';
 
     // --- KANBAN INTERFACES ---
@@ -47,7 +48,6 @@
 	export let isSidebarOpen = false;
 	export let isDarkMode = false;
 	let currentDateTime = "";
-    export const dropdownIds = ['notifWindow', 'helpWindow', 'profileWindow'];
     export let usernameForDisplay: string;
     export let handleGlobalClickListener: ((event: MouseEvent) => void) | null = null;
     export let handleEscKeyListener: ((event: KeyboardEvent) => void) | null = null;
@@ -653,34 +653,10 @@
 
         // Update date/time
         updateDateTime();
-        const dateTimeInterval = setInterval(updateDateTime, 60000);
-
-        const setupIconListener = (iconId: string, windowId: string) => {
-            const iconElement = document.getElementById(iconId);
-            if (iconElement) {
-                const listener = (e) => { 
-                    e.stopPropagation(); 
-                    toggleWindow(windowId); 
-                    closeOtherWindows(windowId);
-                };
-                iconElement.addEventListener('click', listener);
-                (iconElement as any).__clickHandler = listener; 
-            }
-        };
-        setupIconListener('bellIcon', 'notifWindow');
-        setupIconListener('helpIcon', 'helpWindow');
-        setupIconListener('profileIcon', 'profileWindow');
-        const darkModeButton = document.getElementById('darkModeToggle');
-        if (darkModeButton) darkModeButton.addEventListener('click', toggleDarkMode);
+        dateTimeInterval = setInterval(updateDateTime, 60000);
 
         handleGlobalClickListener = (event: MouseEvent) => {
             const target = event.target as Node | null;
-            let isClickInsideHeaderDropdownTrigger = false;
-            const headerTriggerIds = ['bellIcon', 'helpIcon', 'profileIcon'];
-            headerTriggerIds.forEach(triggerId => { const triggerEl = document.getElementById(triggerId); if (triggerEl && triggerEl.contains(target)) isClickInsideHeaderDropdownTrigger = true; });
-            let isClickInsideHeaderDropdownWindow = false;
-            dropdownIds.forEach(windowId => { const windowEl = document.getElementById(windowId); if (windowEl && windowEl.contains(target)) isClickInsideHeaderDropdownWindow = true; });
-            if (!isClickInsideHeaderDropdownTrigger && !isClickInsideHeaderDropdownWindow) closeOtherWindows('');
             const sidebarEl = document.getElementById('sidebar');
             const hamburgerButton = document.getElementById('hamburgerButton');
             if (isSidebarOpen && sidebarEl && !sidebarEl.contains(target) && hamburgerButton && !hamburgerButton.contains(target)) closeSidebar();
@@ -693,7 +669,6 @@
                     closeAddTaskModal();
                 } else {
                     if (isSidebarOpen) closeSidebar();
-                    closeOtherWindows('');
                 }
             }
         };
@@ -708,14 +683,6 @@
                 if (handleGlobalClickListener) document.removeEventListener('click', handleGlobalClickListener);
 			    if (handleEscKeyListener) document.removeEventListener('keydown', handleEscKeyListener);
             }
-            ['bellIcon', 'helpIcon', 'profileIcon'].forEach(iconId => {
-                const iconElement = document.getElementById(iconId);
-                if (iconElement && (iconElement as any).__clickHandler) {
-                    iconElement.removeEventListener('click', (iconElement as any).__clickHandler);
-                }
-            });
-            const darkModeButtonEl = document.getElementById('darkModeToggle');
-            if (darkModeButtonEl) darkModeButtonEl.removeEventListener('click', toggleDarkMode);
             if (cardAnimationFrameId) cancelAnimationFrame(cardAnimationFrameId);
             if (columnAnimationFrameId) cancelAnimationFrame(columnAnimationFrameId); // Cleanup column animation
 		};
@@ -1097,20 +1064,6 @@
         };
         currentDateTime = now.toLocaleDateString('en-US', options);
     }
-    function toggleWindow(id: string) {
-        const el = document.getElementById(id);
-        if (el) el.classList.toggle('hidden');
-    }
-    function closeOtherWindows(currentId: string) {
-        dropdownIds.forEach(id => {
-            if (id !== currentId) {
-                const el = document.getElementById(id);
-                if (el && !el.classList.contains('hidden')) {
-                    el.classList.add('hidden');
-                }
-            }
-        });
-    }
 
 </script>
 
@@ -1123,9 +1076,14 @@
   transition:fly={{ x: -300, duration: 300, easing: quintOut }}
 >
   <div>
-    <div class="flex items-center gap-2 mb-8 pb-4 border-b ${isDarkMode ? 'border-zinc-700' : 'border-gray-200'}">
-      <img src={isDarkMode ? "/logonamindarkmode.png" : "/logonamin.png"} alt="Microtask Logo" class="w-8 h-8" />
-      <h1 class={`text-xl font-bold ${isDarkMode ? 'text-zinc-100' : 'text-gray-800'}`}>Microtask</h1>
+    <div class="flex items-center justify-between mb-8 pb-4 border-b ${isDarkMode ? 'border-zinc-700' : 'border-gray-200'}">
+      <div class="flex items-center gap-2">
+        <img src={isDarkMode ? "/logonamindarkmode.png" : "/logonamin.png"} alt="Microtask Logo" class="w-8 h-8" />
+        <h1 class={`text-xl font-bold ${isDarkMode ? 'text-zinc-100' : 'text-gray-800'}`}>Microtask</h1>
+      </div>
+      <button on:click={closeSidebar} class={`p-1 rounded-md transition-colors ${isDarkMode ? 'hover:bg-zinc-700 text-zinc-400' : 'hover:bg-gray-100 text-gray-500'}`} aria-label="Close sidebar">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+      </button>
     </div>
         <nav class="flex flex-col gap-2">
           <a href="/home" 
@@ -1228,58 +1186,7 @@
   {/if}
 
 	<div class="main-content-wrapper">
-<header class="top-header">
-		<div class="header-left">
-			<button id="hamburgerButton" class="menu-btn" on:click={toggleSidebar} aria-label="Toggle Sidebar">
-        		<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" /></svg>
-			</button>
-            <a href="/home" class="logo">
-                <img src={isDarkMode ? "/logonamindarkmode.png" : "/logonamin.png"} alt="Microtask Logo" />
-                <span class="top-header-logo-text">Microtask</span>
-            </a>
-		</div>
-      <div class="flex items-center gap-4 mr-4 right text-gray-600 dark:text-zinc-300 text-sm font-medium">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5" aria-hidden="true">
-          <path fill-rule="evenodd" d="M6.75 2.25A.75.75 0 017.5 3v1.5h9V3A.75.75 0 0118 3v1.5h.75a3 3 0 013 3v11.25a3 3 0 01-3 3H5.25a3 3 0 01-3-3V7.5a3 3 0 013-3H6V3a.75.75 0 01.75-.75zM5.25 6.75c-.621 0-1.125.504-1.125 1.125V18a1.125 1.125 0 001.125 1.125h13.5A1.125 1.125 0 0019.875 18V7.875c0-.621-.504-1.125-1.125-1.125H5.25z" clip-rule="evenodd" /><path d="M10.5 9.75a.75.75 0 00-1.5 0v.01c0 .414.336.75.75.75H10.5v-.01a.75.75 0 000-1.5zM10.5 12.75a.75.75 0 00-1.5 0v.01c0 .414.336.75.75.75H10.5v-.01a.75.75 0 000-1.5zM10.5 15.75a.75.75 0 00-1.5 0v.01c0 .414.336.75.75.75H10.5v-.01a.75.75 0 000-1.5zM13.5 9.75a.75.75 0 00-1.5 0v.01c0 .414.336.75.75.75H13.5v-.01a.75.75 0 000-1.5zM13.5 12.75a.75.75 0 00-1.5 0v.01c0 .414.336.75.75.75H13.5v-.01a.75.75 0 000-1.5zM13.5 15.75a.75.75 0 00-1.5 0v.01c0 .414.336.75.75.75H13.5v-.01a.75.75 0 000-1.5zM16.5 9.75a.75.75 0 00-1.5 0v.01c0 .414.336.75.75.75H16.5v-.01a.75.75 0 000-1.5zM16.5 12.75a.75.75 0 00-1.5 0v.01c0 .414.336.75.75.75H16.5v-.01a.75.75 0 000-1.5zM16.5 15.75a.75.75 0 00-1.5 0v.01c0 .414.336.75.75.75H16.5v-.01a.75.75 0 000-1.5z"/></svg>
-        <span>{currentDateTime}</span>
-      </div>
-			<div class="header-icons">
-                <div class="relative">
-                    <button id="bellIcon" class="header-icon-btn" aria-label="Notifications">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M5.25 9a6.75 6.75 0 0113.5 0v.75c0 2.123.8 4.057 2.118 5.52a.75.75 0 01-.297 1.206c-1.544.57-3.16.99-4.831 1.243a3.75 3.75 0 11-7.48 0c-1.673-.253-3.287-.673-4.831-1.243a.75.75 0 01-.297-1.206C4.45 13.807 5.25 11.873 5.25 9.75V9zm4.502 8.9a2.25 2.25 0 104.496 0H9.752z" clip-rule="evenodd" /></svg>
-                    </button>
-                    <div id="notifWindow" class="dropdown-window hidden w-80">
-                        <h3 class="dropdown-title">Notifications</h3> <p class="dropdown-empty-text">No new notifications.</p>
-                    </div>
-                </div>
-                <div class="relative">
-                    <button id="helpIcon" class="header-icon-btn" aria-label="Help & FAQ">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12zm8.706-1.442c1.146-.573 2.437.463 2.126 1.706l-.709 2.836.042-.02a.75.75 0 01.67 1.34l-.042.022c-1.147.573-2.438-.463-2.127-1.706l.71-2.836-.042.02a.75.75 0 11-.671-1.34l.041-.022zM12 9a.75.75 0 100-1.5.75.75 0 000 1.5z" clip-rule="evenodd" /></svg>
-                    </button>
-                    <div id="helpWindow" class="dropdown-window hidden">
-                        <h3 class="dropdown-title">FAQ</h3><ul class="dropdown-list"><li>How do I add a task?</li><li>Where is the calendar?</li></ul><a href="/support" class="dropdown-link">Visit Support</a>
-                    </div>
-                </div>
-                <div class="relative">
-                    <button id="profileIcon" class="header-icon-btn" aria-label="Profile Menu">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M18.685 19.097A9.723 9.723 0 0021.75 12c0-5.385-4.365-9.75-9.75-9.75S2.25 6.615 2.25 12a9.723 9.723 0 003.065 7.097A9.716 9.716 0 0012 21.75a9.716 9.716 0 006.685-2.653zm-12.54-1.285A7.486 7.486 0 0112 15a7.486 7.486 0 015.855 2.812A8.224 8.224 0 0112 20.25a8.224 8.224 0 01-5.855-2.438zM15.75 9a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z" clip-rule="evenodd" /></svg>
-                    </button>
-                    <div id="profileWindow" class="dropdown-window hidden">
-                        <h3 class="dropdown-title">Profile</h3>
-                        <p class="dropdown-user-welcome">Welcome, {usernameForDisplay}!</p>
-                        <form method="POST" action="?/logout" use:enhance={logoutEnhance}>
-                            <button type="submit" class="profile-dropdown-button logout-action-button">Logout</button>
-                        </form>
-                    </div>
-                </div>
-                <button id="darkModeToggle" aria-label="Toggle Dark Mode" class="darkmode-toggle-button">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
-                        {#if isDarkMode} <path fill-rule="evenodd" d="M9.528 1.718a.75.75 0 0 0-.103.103l1.132 1.132a.75.75 0 0 0 1.06 0l1.132-1.132a.75.75 0 0 0-.103-1.06l-1.132-1.132a.75.75 0 0 0-1.06 0L9.63 1.615a.75.75 0 0 0-.102.103ZM12 3.75a.75.75 0 0 1 .75.75v1.5a.75.75 0 0 1-1.5 0v-1.5a.75.75 0 0 1 .75-.75ZM18.282 5.282a.75.75 0 0 0-1.06 0l-1.132 1.132a.75.75 0 0 0 .103 1.06l1.132 1.132a.75.75 0 0 0 1.06 0l1.132-1.132a.75.75 0 0 0-.103-1.06l-1.132-1.132a.75.75 0 0 0 0-.103ZM19.5 12a.75.75 0 0 1-.75.75h-1.5a.75.75 0 0 1 0-1.5h1.5a.75.75 0 0 1 .75.75ZM18.282 18.718a.75.75 0 0 0 0 1.06l1.132 1.132a.75.75 0 0 0 1.06 0l1.132-1.132a.75.75 0 0 0-.103-1.06l-1.132-1.132a.75.75 0 0 0-1.06 0l-1.132 1.132a.75.75 0 0 0 .103.103ZM12 18.75a.75.75 0 0 1-.75.75h-1.5a.75.75 0 0 1 0-1.5h1.5a.75.75 0 0 1 .75.75ZM5.718 18.718a.75.75 0 0 0 1.06 0l1.132-1.132a.75.75 0 0 0-.103-1.06l-1.132-1.132a.75.75 0 0 0-1.06 0L4.586 17.686a.75.75 0 0 0 .103 1.06l1.132 1.132a.75.75 0 0 0 0 .103ZM4.5 12a.75.75 0 0 1 .75-.75h1.5a.75.75 0 0 1 0-1.5h-1.5a.75.75 0 0 1-.75-.75ZM5.718 5.282a.75.75 0 0 0 0-1.06l-1.132-1.132a.75.75 0 0 0-1.06 0L2.39 4.114a.75.75 0 0 0 .103 1.06l1.132 1.132a.75.75 0 0 0 1.06 0l1.132-1.132a.75.75 0 0 0-.103-.103ZM12 6.75a5.25 5.25 0 0 1 5.25 5.25 5.25 5.25 0 0 1-5.25 5.25 5.25 5.25 0 0 1-5.25-5.25 5.25 5.25 0 0 1 5.25-5.25Z" clip-rule="evenodd" />
-                        {:else} <path fill-rule="evenodd" d="M10.5 3.75a6.75 6.75 0 1 0 0 13.5 6.75 6.75 0 0 0 0-13.5ZM12 16.5a4.5 4.5 0 1 1 0-9 4.5 4.5 0 0 1 0 9Z" clip-rule="evenodd" /> {/if}
-                    </svg>
-                </button>
-            </div>
-		</header>
+		<AppHeader {isDarkMode} username={usernameForDisplay} {currentDateTime} on:toggleSidebar={toggleSidebar} on:toggleDarkMode={toggleDarkMode} on:logout={handleLogout} />
 
         <main class="main-content-kanban">
             <div class="board-header-kanban">
@@ -1385,10 +1292,13 @@
                                         </div>
                                     </div>
                                 {/each}
-                                {#if !draggedCardItem && column.id === COLUMN_PENDING_ID } 
-    <button class="add-card-button" on:click={() => openAddTaskModal(column.id)}>+ Add a card</button>
-{/if}
                             </div>
+                            <!-- Add card button fixed at bottom of column -->
+                            {#if !draggedCardItem && column.id === COLUMN_PENDING_ID }
+                                <div class="add-card-button-wrapper">
+                                    <button class="add-card-button" on:click={() => openAddTaskModal(column.id)}>+ Add a card</button>
+                                </div>
+                            {/if}
                         </div>
                     {/each}
                 </div>
@@ -1575,34 +1485,7 @@
     .logout-button { color: #374151; display: flex; align-items: center; gap: 0.75rem; padding: 0.5rem 0.75rem; border-radius: 0.375rem; font-weight: 600; width: 100%; margin-top: auto; transition: background-color 150ms ease; background: none; border: none; cursor: pointer; text-align: left; font-family: inherit; font-size: inherit; }
     .logout-button:hover { background-color: #f3f4f6; }
     .logout-button .nav-icon { width: 1.25rem; height: 1.25rem; }
-    .top-header { position: fixed; top: 0; right: 0; width: 100%; display: flex; align-items: center; justify-content: space-between; padding: 0 1rem; height: 60px; z-index: 40; box-shadow: 0 1px 3px rgba(0,0,0,0.05); transition: background-color 0.2s, border-color 0.2s, left 0.3s ease; background-color: #ffffff; border-bottom: 1px solid #e5e7eb; color: #1f2937; box-sizing: border-box; }
-    .header-left { display: flex; align-items: center; gap: 0.75rem; }
-    .top-header .menu-btn { background: none; border: none; cursor: pointer; padding: 0.5rem; border-radius: 9999px; transition: background-color 0.15s ease; display: flex; align-items: center; justify-content: center; color: inherit; }
-    .top-header .menu-btn svg { width: 1.5rem; height: 1.5rem; }
-    .top-header .menu-btn:hover { background-color: #f3f4f6; }
-    .top-header .logo { display: flex; align-items: center; gap: 0.5rem; text-decoration: none;}
-    .top-header .logo img { height: 2rem; width: auto; }
-    .top-header .logo .top-header-logo-text { color: #1f2937; font-weight: 600; font-size: 1.25rem; }
-    .top-header .header-icons { display: flex; align-items: center; gap: 0.25rem; }
-    .top-header .header-icons .header-icon-btn { background: none; border: none; cursor: pointer; padding: 0.5rem; line-height: 0; display: flex; align-items: center; justify-content: center; border-radius: 9999px; width: 36px; height: 36px; transition: background-color 0.15s ease; color: inherit; }
-    .top-header .header-icons .header-icon-btn svg { width: 1.25rem; height: 1.25rem; }
-    .top-header .header-icons .header-icon-btn:hover { background-color: #f3f4f6; }
-    .darkmode-toggle-button { margin-left: 0.5rem; padding: 0.375rem; background: none; border: none; cursor: pointer; line-height: 0; display: flex; align-items: center; justify-content: center; border-radius: 9999px; width: 36px; height: 36px; transition: background-color 0.15s ease; color: #374151; }
-    .darkmode-toggle-button svg { width: 1.25rem; height: 1.25rem; }
-    .darkmode-toggle-button:hover { background-color: #f3f4f6; }
     .relative { position: relative; }
-    .dropdown-window { position: absolute; right: 0; top: calc(100% + 8px); border-radius: 0.5rem; box-shadow: 0 4px 12px rgba(0,0,0,0.1); padding: 0.75rem; z-index: 50; opacity: 0; transform: translateY(-5px) scale(0.98); transition: opacity 0.15s ease-out, transform 0.15s ease-out; pointer-events: none; visibility: hidden; background-color: #ffffff; border: 1px solid #e5e7eb; color: #374151; box-sizing: border-box; }
-    .dropdown-window.w-80 { width: 20rem; }
-    .dropdown-window:not(.hidden-dropdown) { opacity: 1; transform: translateY(0) scale(1); pointer-events: auto; visibility: visible; }
-    .dropdown-title { font-weight: 600; margin-bottom: 0.5rem; font-size: 0.875rem; }
-    .dropdown-empty-text { font-size: 0.75rem; text-align: center; padding-top: 1rem; padding-bottom: 1rem;}
-    .dropdown-list { list-style-type: disc; list-style-position: inside; margin-top: 0.25rem; font-size: 0.75rem; padding-left: 1rem; }
-    .dropdown-list > li:not(:first-child) { margin-top: 0.25rem; }
-    .dropdown-link { font-size: 0.75rem; color: #2563eb; margin-top: 0.5rem; display: block; }
-    .dropdown-link:hover { text-decoration: underline; }
-    .dropdown-user-welcome { font-size: 0.75rem; margin-bottom: 0.5rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;}
-    .profile-dropdown-button.logout-action-button { background-color: #fee2e2; color: #b91c1c; font-size: 0.75rem; padding: 0.375rem 0.5rem; border-radius: 0.25rem; width: 100%; text-align: left; transition: background-color 150ms; border: none; cursor: pointer; font-family: inherit; }
-    .profile-dropdown-button.logout-action-button:hover { background-color: #fecaca; }
     .main-content-wrapper { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
     .main-content-kanban { padding-top: 60px; flex-grow: 1; display: flex; flex-direction: column; overflow: hidden; box-sizing: border-box; background-color: var(--bg-light); color: var(--text-light-primary); }
     .board-header-kanban { display: flex; align-items: center; padding: 10px 1rem; flex-shrink: 0; box-sizing: border-box; }
@@ -1613,15 +1496,6 @@
     :global(body.dark) .nav-link { color: #d1d5db; } :global(body.dark) .nav-link:hover { background-color: #374151; }
     :global(body.dark) .nav-link.active { background-color: #1e40af; }
     :global(body.dark) .logout-button { color: #d1d5db; } :global(body.dark) .logout-button:hover { background-color: #374151; }
-    :global(body.dark) .top-header { background-color: #1f2937; border-bottom-color: #374151; color: #d1d5db; }
-    :global(body.dark) .top-header .logo .top-header-logo-text { color: #f3f4f6; }
-    :global(body.dark) .top-header .menu-btn:hover { background-color: #374151; }
-    :global(body.dark) .top-header .header-icons .header-icon-btn:hover { background-color: #374151; }
-    :global(body.dark) .darkmode-toggle-button { color: #d1d5db; } :global(body.dark) .darkmode-toggle-button:hover { background-color: #374151; }
-    :global(body.dark) .dropdown-window { background-color: #374151; border-color: #4b5563; color: #f3f4f6; }
-    :global(body.dark) .dropdown-link { color: #60a5fa; }
-    :global(body.dark) .profile-dropdown-button.logout-action-button { background-color: #7f1d1d; color: #fca5a5; }
-    :global(body.dark) .profile-dropdown-button.logout-action-button:hover { background-color: #991b1b; }
     :global(body.dark) .main-content-kanban { background-color: var(--bg-dark); color: var(--text-dark-primary); }
 
     .modal-overlay {
@@ -1841,7 +1715,17 @@
     :global(body.dark) .priority-low { border-left-color: var(--priority-low-dark); }
     :global(body.dark) .priority-standard { border-left-color: var(--border-dark); }
 
-    .add-card-button { background-color: transparent; border: none; color: var(--text-light-secondary); padding: 8px 10px; border-radius: 4px; text-align: left; width: 100%; cursor: pointer; font-size: 0.85em; box-sizing: border-box; transition: background-color 0.15s ease, color 0.15s ease; margin-top: 4px; }
+    .add-card-button-wrapper { 
+        padding: 8px 10px; 
+        border-top: 1px solid var(--border-light); 
+        background: linear-gradient(to bottom, rgba(255,255,255,0.9), var(--surface-light));
+        flex-shrink: 0;
+    }
+    :global(body.dark) .add-card-button-wrapper { 
+        border-top-color: var(--border-dark); 
+        background: linear-gradient(to bottom, rgba(31,41,55,0.9), var(--surface-dark));
+    }
+    .add-card-button { background-color: transparent; border: none; color: var(--text-light-secondary); padding: 8px 10px; border-radius: 4px; text-align: left; width: 100%; cursor: pointer; font-size: 0.85em; box-sizing: border-box; transition: background-color 0.15s ease, color 0.15s ease; }
     .add-card-button:hover { background-color: var(--interactive-hover-light); color: var(--interactive-light); }
     :global(body.dark) .add-card-button { color: var(--text-dark-secondary); }
     :global(body.dark) .add-card-button:hover { background-color: var(--interactive-hover-dark); color: var(--interactive-dark); }

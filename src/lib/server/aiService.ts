@@ -13,57 +13,61 @@ export interface OriginalTemplateStep {
     userInput?: string;
 }
 
+// Helper function to delay execution
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
 // Ensure 'export' is present
 export async function getOpenRouterCompletion(prompt: string, throwOnError: boolean = false): Promise<string | null> {
-  const models = [
-    'nousresearch/hermes-3-llama-3.1-405b:free',
-    'google/gemini-2.0-flash-lite-preview-02-05:free',
-    'meta-llama/llama-3.2-11b-vision-instruct:free'
-  ];
+  // Only try ONE model - no fallbacks to avoid burning rate limits
+  const model = 'meta-llama/llama-3.2-3b-instruct:free';
 
-  let lastError: any = null;
+  try {
+    console.log(`DEBUG: Calling OpenRouter with model: ${model}`);
 
-  for (const model of models) {
-    try {
-      console.log(`DEBUG: Trying OpenRouter model: ${model}`);
-      console.log('DEBUG: OPENROUTER_API_KEY length:', OPENROUTER_API_KEY ? OPENROUTER_API_KEY.length : 'undefined/null');
+    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://microtask.app',
+        'X-Title': 'Microtask AI Assistant'
+      },
+      body: JSON.stringify({
+        model: model,
+        messages: [{ role: 'user', content: prompt }]
+      })
+    });
 
-      const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
-          'Content-Type': 'application/json',
-          'Referer': 'http://localhost:5173', // Updated for local development
-          'X-Title': 'Microtask AI Task Generation'
-        },
-        body: JSON.stringify({
-          model: model,
-          messages: [{ role: 'user', content: prompt }]
-        })
-      });
-
-      if (!res.ok) {
-        const errorText = await res.text();
-        const errorMsg = `OpenRouter API error response (${model}): ${res.status} ${res.statusText} - ${errorText}`;
-        console.error(errorMsg);
-        lastError = new Error(errorMsg);
-        continue; // Try next model
-      }
-
-      const data = await res.json();
-      const content = data.choices?.[0]?.message?.content;
-      if (content) return content;
+    if (!res.ok) {
+      const errorText = await res.text();
+      console.error(`OpenRouter API error: ${res.status} - ${errorText}`);
       
-    } catch (err) {
-      console.error(`OpenRouter request failed during fetch for model ${model}:`, err);
-      lastError = err;
+      if (res.status === 429) {
+        // Try to get retry time from headers
+        const retryAfter = res.headers.get('Retry-After') || res.headers.get('x-ratelimit-reset');
+        const waitTime = retryAfter ? `${retryAfter} seconds` : 'a minute';
+        throw new Error(`RATE_LIMITED:${waitTime}`);
+      }
+      
+      if (throwOnError) {
+        throw new Error(`API error ${res.status}: ${errorText}`);
+      }
+      return null;
     }
-  }
 
-  if (throwOnError && lastError) {
-    throw lastError;
+    const data = await res.json();
+    const content = data.choices?.[0]?.message?.content;
+    if (content) return content;
+    
+    return null;
+    
+  } catch (err: any) {
+    console.error(`OpenRouter fetch error:`, err);
+    if (err.message?.startsWith('RATE_LIMITED') || throwOnError) {
+      throw err;
+    }
+    return null;
   }
-  return null;
 }
 
 // Ensure 'export' is present
