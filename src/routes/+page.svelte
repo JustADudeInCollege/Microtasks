@@ -18,9 +18,16 @@
 	let isLoading = false;
 	let showPassword = false;
 	let notificationMessage: string | null = null;
+	let isDarkMode = false;
 
 	// --- Lifecycle Hook ---
 	onMount(() => {
+		// Load dark mode preference
+		const savedTheme = localStorage.getItem('theme');
+		const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+		isDarkMode = savedTheme === 'dark' || (!savedTheme && prefersDark);
+		document.body.classList.toggle('dark', isDarkMode);
+
 		// Check for messages passed via URL parameters (e.g., after signup/password reset)
 		const urlParams = new URLSearchParams($page.url.search);
 		const message = urlParams.get('message');
@@ -270,19 +277,18 @@
 	}
 </script>
 
-<main class="flex flex-col justify-center items-center min-h-screen w-full relative overflow-hidden">
-    <!-- Background image anchored at bottom -->
-    <img 
-        src="/background.png" 
-        alt="Background" 
-        class="absolute bottom-0 left-0 w-full h-auto min-h-full object-cover object-bottom -z-10"
-    />
+<main class={`flex flex-col justify-center items-center min-h-screen w-full relative overflow-hidden ${isDarkMode ? 'bg-zinc-900' : 'bg-gray-100'}`}>
+    <!-- Background image -->
+    <div 
+        class="absolute inset-0 z-0 bg-cover bg-bottom bg-no-repeat"
+        style={`background-image: url('${isDarkMode ? '/Darkmode.png' : '/background.png'}');`}
+    ></div>
     <img
-        src="/logonamin.png"
+        src={isDarkMode ? "/logonamindarkmode.png" : "/logonamin.png"}
         alt="Microtask Logo"
-        class="absolute top-10 left-10 h-12 scale-250 z-10" 
+        class="absolute top-10 left-10 h-12 scale-250 z-20" 
     />
-    <h1 class="text-3xl font-bold text-center mb-6 text-black z-10">Welcome to Microtask!</h1>
+    <h1 class={`text-3xl font-bold text-center mb-6 z-10 ${isDarkMode ? 'text-white' : 'text-black'}`}>Welcome to Microtask!</h1>
 
     {#if notificationMessage}
         <div
@@ -305,7 +311,7 @@
         </div>
     {/if}
 
-    <div class="bg-white p-6 md:p-8 rounded-lg shadow-2xl border border-gray-300 max-w-md w-[90%] md:w-full relative z-10">
+    <div class={`p-6 md:p-8 rounded-lg shadow-2xl max-w-md w-[90%] md:w-full relative z-10 ${isDarkMode ? 'bg-zinc-800 border-zinc-700 text-zinc-100' : 'bg-white border border-gray-300'}`}>
         <h2 class="text-xl font-bold text-center mb-4">Log In</h2>
 
         {#if errorMessage}
@@ -320,7 +326,7 @@
 
         <form on:submit|preventDefault={handleLogin} novalidate>
             <div class="mb-4">
-                <label for="loginIdentifier" class="block text-gray-700 mb-1 font-medium text-sm"
+                <label for="loginIdentifier" class={`block mb-1 font-medium text-sm ${isDarkMode ? 'text-zinc-300' : 'text-gray-700'}`}
                     >Email or Username</label
                 >
                 <input
@@ -328,7 +334,7 @@
                     name="loginIdentifier"
                     type="text"
                     bind:value={loginIdentifier}
-                    class="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-sm transition duration-150 ease-in-out"
+                    class={`w-full px-3 py-2 border rounded-lg outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-sm transition duration-150 ease-in-out ${isDarkMode ? 'bg-zinc-700 border-zinc-600 text-zinc-100 placeholder-zinc-400' : 'border-gray-300 text-gray-900'}`}
                     required
                     placeholder="Enter your email or username"
                     autocomplete="username"
@@ -336,7 +342,7 @@
                 />
             </div>
             <div class="mb-2">
-                <label for="password" class="block text-gray-700 mb-1 font-medium text-sm">Password</label>
+                <label for="password" class={`block mb-1 font-medium text-sm ${isDarkMode ? 'text-zinc-300' : 'text-gray-700'}`}>Password</label>
                 <div class="relative">
                     {#if showPassword}
                         <input
@@ -344,7 +350,7 @@
                             name="password"
                             type="text"
                             bind:value={password}
-                            class="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-sm transition duration-150 ease-in-out"
+                            class={`w-full px-3 py-2 border rounded-lg outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-sm transition duration-150 ease-in-out ${isDarkMode ? 'bg-zinc-700 border-zinc-600 text-zinc-100 placeholder-zinc-400' : 'border-gray-300 text-gray-900'}`}
                             required
                             placeholder="Enter your password"
                             autocomplete="current-password"
@@ -356,7 +362,7 @@
                             name="password"
                             type="password"
                             bind:value={password}
-                            class="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-sm transition duration-150 ease-in-out"
+                            class={`w-full px-3 py-2 border rounded-lg outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-sm transition duration-150 ease-in-out ${isDarkMode ? 'bg-zinc-700 border-zinc-600 text-zinc-100 placeholder-zinc-400' : 'border-gray-300 text-gray-900'}`}
                             required
                             placeholder="Enter your password"
                             autocomplete="current-password"
@@ -366,7 +372,7 @@
                     <button
                         type="button"
                         aria-label={showPassword ? 'Hide password' : 'Show password'}
-                        class="absolute right-3 top-1/2 transform -translate-y-1/2 cursor-pointer text-gray-500 hover:text-gray-700 p-1"
+                        class={`absolute right-3 top-1/2 transform -translate-y-1/2 cursor-pointer p-1 ${isDarkMode ? 'text-zinc-400 hover:text-zinc-200' : 'text-gray-500 hover:text-gray-700'}`}
                         on:click={togglePasswordVisibility}
                     >
                         <svg
@@ -396,37 +402,37 @@
                 </div>
             </div>
             <div class="flex justify-end items-center mt-3 mb-4">
-                <a href="/forgotpass" class="text-sm text-blue-600 hover:underline font-medium"
+                <a href="/forgotpass" class="text-sm text-blue-500 hover:underline font-medium"
                     >Forgot Password?</a
                 >
             </div>
             <button
                 type="submit"
                 disabled={isLoading}
-                class="w-full bg-black text-white py-2.5 rounded-lg font-semibold transition duration-200 ease-in-out transform hover:scale-[1.02] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black disabled:opacity-60 disabled:cursor-not-allowed"
+                class={`w-full py-2.5 rounded-lg font-semibold transition duration-200 ease-in-out transform hover:scale-[1.02] focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-60 disabled:cursor-not-allowed ${isDarkMode ? 'bg-blue-600 text-white focus:ring-blue-500' : 'bg-black text-white focus:ring-black'}`}
             >
                 {isLoading ? 'Logging in...' : 'Log in'}
             </button>
             <div class="mt-4 text-center text-sm">
                 Don't have an account?
-                <a href="/signup" class="text-blue-600 hover:underline font-medium">Create one</a>
+                <a href="/signup" class="text-blue-500 hover:underline font-medium">Create one</a>
             </div>
             <div class="relative my-5">
                 <div class="absolute inset-0 flex items-center" aria-hidden="true">
-                    <div class="w-full border-t border-gray-300"></div>
+                    <div class={`w-full border-t ${isDarkMode ? 'border-zinc-600' : 'border-gray-300'}`}></div>
                 </div>
                 <div class="relative flex justify-center text-sm">
-                    <span class="px-2 bg-white text-gray-500">Or</span>
+                    <span class={`px-2 ${isDarkMode ? 'bg-zinc-800 text-zinc-400' : 'bg-white text-gray-500'}`}>Or</span>
                 </div>
             </div>
             <button
                 type="button"
                 on:click={googleLogin}
                 disabled={isLoading}
-                class="w-full border border-gray-300 flex items-center justify-center py-2.5 rounded-lg font-semibold cursor-pointer transition duration-200 ease-in-out transform hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-gray-400 disabled:opacity-60 disabled:cursor-not-allowed"
+                class={`w-full border flex items-center justify-center py-2.5 rounded-lg font-semibold cursor-pointer transition duration-200 ease-in-out transform focus:outline-none focus:ring-2 focus:ring-offset-1 disabled:opacity-60 disabled:cursor-not-allowed ${isDarkMode ? 'border-zinc-600 hover:bg-zinc-700 focus:ring-zinc-500' : 'border-gray-300 hover:bg-gray-50 focus:ring-gray-400'}`}
             >
                 <img src="/iconnggoogle.webp" alt="Google" class="h-5 mr-2" />
-                <span class="text-sm text-gray-700">Log in with Google</span>
+                <span class={`text-sm ${isDarkMode ? 'text-zinc-200' : 'text-gray-700'}`}>Log in with Google</span>
             </button>
         </form>
     </div>

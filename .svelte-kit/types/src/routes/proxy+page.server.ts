@@ -20,15 +20,24 @@ export const actions = {
       });
     }
 
-    console.log(`[DEBUG] Server: Looking up email for username: ${username}`);
+    // Normalize username to lowercase for case-insensitive lookup
+    const normalizedUsername = username.toLowerCase();
+    console.log(`[DEBUG] Server: Looking up email for username: ${username} (normalized: ${normalizedUsername})`);
 
     try {
-      // Prepare Firestore query
+      // Prepare Firestore query - query by lowercase username
       const credRef = collection(db, "credentials");
-      const q = query(credRef, where("username", "==", username), limit(1)); // Query by username, expect max 1 result
+      const q = query(credRef, where("usernameLower", "==", normalizedUsername), limit(1));
 
       // Execute query
-      const snapshot = await getDocs(q);
+      let snapshot = await getDocs(q);
+
+      // If not found with usernameLower, try exact match (for backwards compatibility)
+      if (snapshot.empty) {
+        console.log(`[DEBUG] Server: No usernameLower match, trying exact username match`);
+        const qExact = query(credRef, where("username", "==", username), limit(1));
+        snapshot = await getDocs(qExact);
+      }
 
       // --- Handling Firestore Query Result ---
       if (snapshot.empty) {
