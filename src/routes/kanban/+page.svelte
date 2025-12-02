@@ -1470,7 +1470,7 @@
 <style>
     /* --- SHARED STYLES --- */
     .font-sans { font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-    .page-wrapper { display: flex; height: 100vh; color: #1f2937; background-color: #ffffff; }
+    .page-wrapper { display: flex; height: 100vh; color: #1f2937; background-color: #f3f4f6; }
     canvas { display: block; } .hidden-dropdown { display: none !important; } .capitalize { text-transform: capitalize; }
 	.sidebar-container { background-color: #ffffff; border-right: 1px solid #e5e7eb; color: #374151; position: fixed; top: 0; left: 0; height: 100%; width: 16rem; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05); z-index: 50; display: flex; flex-direction: column; justify-content: space-between; padding: 1rem; box-sizing: border-box; }
     .sidebar-header { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 2rem; padding-bottom: 1rem; border-bottom: 1px solid #e5e7eb; }
@@ -1490,7 +1490,7 @@
     .main-content-kanban { padding-top: 60px; flex-grow: 1; display: flex; flex-direction: column; overflow: hidden; box-sizing: border-box; background-color: var(--bg-light); color: var(--text-light-primary); }
     .board-header-kanban { display: flex; align-items: center; padding: 10px 1rem; flex-shrink: 0; box-sizing: border-box; }
     .board-title-kanban { font-size: 1.25rem; font-weight: 700; color: inherit; margin: 0; }
-    :global(body.dark) .page-wrapper { color: #d1d5db; background-color: var(--bg-dark); }
+    :global(body.dark) .page-wrapper { color: #d1d5db; background-color: #18181b; }
     :global(body.dark) .sidebar-container { background-color: #1f2937; border-right-color: #374151; color: #d1d5db; }
     :global(body.dark) .sidebar-header { border-bottom-color: #374151; } :global(body.dark) .sidebar-title { color: #f3f4f6; }
     :global(body.dark) .nav-link { color: #d1d5db; } :global(body.dark) .nav-link:hover { background-color: #374151; }
