@@ -875,11 +875,9 @@
                                 {/each}
                             </div>
                             <!-- Add card button fixed at bottom of column -->
-                            {#if !draggedCardItem }
-                                <div class="add-card-button-wrapper">
-                                    <button class="add-card-button" on:click={() => openAddTaskModal(column.id)}>+ Add a card</button>
-                                </div>
-                            {/if}
+                            <div class="add-card-button-wrapper">
+                                <button class="add-card-button" on:click={() => openAddTaskModal(column.id)}>+ Add a card</button>
+                            </div>
                         </div>
                     {/each}
                 </div>
@@ -1251,6 +1249,9 @@
         border-top: 1px solid var(--border-light); 
         background: linear-gradient(to bottom, rgba(255,255,255,0.9), var(--surface-light));
         flex-shrink: 0;
+        position: sticky;
+        bottom: 0;
+        z-index: 5;
     }
     :global(body.dark) .add-card-button-wrapper { 
         border-top-color: var(--border-dark); 

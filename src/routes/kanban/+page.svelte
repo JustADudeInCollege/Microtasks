@@ -1720,6 +1720,9 @@
         border-top: 1px solid var(--border-light); 
         background: linear-gradient(to bottom, rgba(255,255,255,0.9), var(--surface-light));
         flex-shrink: 0;
+        position: sticky;
+        bottom: 0;
+        z-index: 5;
     }
     :global(body.dark) .add-card-button-wrapper { 
         border-top-color: var(--border-dark); 
