@@ -12,6 +12,7 @@
     import AppHeader from '$lib/components/AppHeader.svelte';
     import ShareModal from '$lib/components/ShareModal.svelte';
     import MemberList from '$lib/components/MemberList.svelte';
+    import DatePicker from '$lib/components/DatePicker.svelte';
     import type { TaskForFrontend } from '$lib/types/task';
     import type { WorkspaceMemberForFrontend, MemberRole, TaskAssignment } from '$lib/types/collaboration';
 
@@ -1146,15 +1147,13 @@
                 <input type="text" id="newTaskTitle" name="title" bind:value={newTaskTitle} required class="form-input" placeholder="e.g., Finalize report"/>
             </div>
 
-            <div class="form-group-row">
-                <div class="form-group">
-                    <label for="newTaskDueDate" class="form-label">Due Date*</label>
-                    <input type="date" id="newTaskDueDate" name="dueDate" bind:value={newTaskDueDate} required class="form-input"/>
-                </div>
-                <div class="form-group">
-                    <label for="newTaskDueTime" class="form-label">Due Time*</label>
-                    <input type="time" id="newTaskDueTime" name="dueTime" bind:value={newTaskDueTime} required class="form-input"/>
-                </div>
+            <div class="form-group">
+                <label class="form-label">Due Date*</label>
+                <DatePicker bind:value={newTaskDueDate} name="dueDate" id="newTaskDueDate" required {isDarkMode} />
+            </div>
+            <div class="form-group">
+                <label for="newTaskDueTime" class="form-label">Due Time*</label>
+                <input type="time" id="newTaskDueTime" name="dueTime" bind:value={newTaskDueTime} required class="form-input"/>
             </div>
 
             <div class="form-group">

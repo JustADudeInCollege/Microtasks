@@ -8,12 +8,14 @@
     import type { SubmitFunction, ActionResult } from '@sveltejs/kit';
     import LoadingIndicator from '$lib/components/LoadingIndicator.svelte'; // Import LoadingIndicator
     import AssigneePicker from '$lib/components/AssigneePicker.svelte';
+    import DatePicker from '$lib/components/DatePicker.svelte';
 
 	export let task: TaskForFrontend | null;
 	export let isOpen: boolean;
 	export let workspaceId: string = '';
 	export let workspaceMembers: WorkspaceMemberForFrontend[] = [];
 	export let userRole: MemberRole | 'owner' = 'viewer';
+	export let isDarkMode: boolean = false;
 
     let isLoadingOperation = false; // New state for loading indicator
 	let taskAssignments: TaskAssignment[] = [];
@@ -195,15 +197,13 @@
                         <label for="editDescription">Description</label>
                         <textarea id="editDescription" name="description" bind:value={editDescription}></textarea>
                     </div>
-                    <div class="form-group-row">
-                        <div class="form-group">
-                            <label for="editDueDateISO">Due Date</label>
-                            <input type="date" id="editDueDateISO" name="dueDate" bind:value={editDueDateISO} />
-                        </div>
-                        <div class="form-group">
-                            <label for="editDueTime">Due Time</label>
-                            <input type="time" id="editDueTime" name="dueTime" bind:value={editDueTime} disabled={!editDueDateISO}/>
-                        </div>
+                    <div class="form-group">
+                        <label>Due Date</label>
+                        <DatePicker bind:value={editDueDateISO} name="dueDate" id="editDueDateISO" {isDarkMode} />
+                    </div>
+                    <div class="form-group">
+                        <label for="editDueTime">Due Time</label>
+                        <input type="time" id="editDueTime" name="dueTime" bind:value={editDueTime} disabled={!editDueDateISO}/>
                     </div>
                     <div class="form-group">
                         <label for="editPriority">Priority</label>

@@ -10,6 +10,7 @@
 	import type { PageData, ActionData } from './$types';
 	import AppHeader from '$lib/components/AppHeader.svelte';
 	import PendingInvitations from '$lib/components/PendingInvitations.svelte';
+	import DatePicker from '$lib/components/DatePicker.svelte';
 
 	export let data: PageData;
 	export let form: ActionData; // This is ActionData from ./$types
@@ -672,13 +673,13 @@
 
 				<div class="date-input-grid">
 					<div>
-						<label for="projectStartDate" class="modal-label">Plan Start Date</label>
-						<input type="date" id="projectStartDate" name="projectStartDate" bind:value={projectStartDate} class="modal-input" />
+						<label class="modal-label">Plan Start Date</label>
+						<DatePicker bind:value={projectStartDate} name="projectStartDate" id="projectStartDate" {isDarkMode} />
 						<p class="input-hint">Tasks will be scheduled from this date.</p>
 					</div>
 					<div>
-						<label for="projectEndDate" class="modal-label">Plan End Date (Optional)</label>
-						<input type="date" id="projectEndDate" name="projectEndDate" bind:value={projectEndDate} class="modal-input" />
+						<label class="modal-label">Plan End Date (Optional)</label>
+						<DatePicker bind:value={projectEndDate} name="projectEndDate" id="projectEndDate" {isDarkMode} />
 						<p class="input-hint">Distribute tasks until this date if set.</p>
 					</div>
 				</div>

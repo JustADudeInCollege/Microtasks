@@ -12,6 +12,7 @@
     import TaskDetailModal from '$lib/components/TaskDetailModal.svelte';
     import LoadingIndicator from '$lib/components/LoadingIndicator.svelte';
     import AppHeader from '$lib/components/AppHeader.svelte';
+    import DatePicker from '$lib/components/DatePicker.svelte';
     import type { TaskForFrontend } from '$lib/types/task';
 
     // --- KANBAN INTERFACES ---
@@ -1315,7 +1316,7 @@
 </div>
 {/if}
 
-<TaskDetailModal bind:isOpen={isTaskDetailModalOpen} task={selectedTaskForModal} 
+<TaskDetailModal bind:isOpen={isTaskDetailModalOpen} task={selectedTaskForModal} {isDarkMode}
     on:close={() => isTaskDetailModalOpen = false}
     on:updated={async () => {
         isLoadingOperation = true; // Start loading for task update
@@ -1407,15 +1408,13 @@
                 <input type="text" id="newTaskTitle" name="title" bind:value={newTaskTitle} required class="form-input" placeholder="e.g., Finalize report"/>
             </div>
 
-            <div class="form-group-row">
-                <div class="form-group">
-                    <label for="newTaskDueDate" class="form-label">Due Date*</label>
-                    <input type="date" id="newTaskDueDate" name="dueDate" bind:value={newTaskDueDate} required class="form-input"/>
-                </div>
-                <div class="form-group">
-                    <label for="newTaskDueTime" class="form-label">Due Time*</label>
-                    <input type="time" id="newTaskDueTime" name="dueTime" bind:value={newTaskDueTime} required class="form-input"/>
-                </div>
+            <div class="form-group">
+                <label class="form-label">Due Date*</label>
+                <DatePicker bind:value={newTaskDueDate} name="dueDate" id="newTaskDueDate" required {isDarkMode} />
+            </div>
+            <div class="form-group">
+                <label for="newTaskDueTime" class="form-label">Due Time*</label>
+                <input type="time" id="newTaskDueTime" name="dueTime" bind:value={newTaskDueTime} required class="form-input"/>
             </div>
 
             <div class="form-group">
@@ -1449,15 +1448,13 @@
 <div class="modal-overlay" on:click={handleUpdateDueDateCancel}>
     <div class="modal-content add-task-modal-content" on:click|stopPropagation>
         <h3 class="modal-title">Update Due Date for "{updateDueDateTaskTitle}"</h3>
-        <div class="form-group-row">
-            <div class="form-group">
-                <label for="newUpdatedDueDate" class="form-label">New Due Date*</label>
-                <input type="date" id="newUpdatedDueDate" bind:value={newUpdatedDueDate} required class="form-input"/>
-            </div>
-            <div class="form-group">
-                <label for="newUpdatedDueTime" class="form-label">New Due Time*</label>
-                <input type="time" id="newUpdatedDueTime" bind:value={newUpdatedDueTime} required class="form-input"/>
-            </div>
+        <div class="form-group">
+            <label class="form-label">New Due Date*</label>
+            <DatePicker bind:value={newUpdatedDueDate} name="newUpdatedDueDate" id="newUpdatedDueDate" required {isDarkMode} />
+        </div>
+        <div class="form-group">
+            <label for="newUpdatedDueTime" class="form-label">New Due Time*</label>
+            <input type="time" id="newUpdatedDueTime" bind:value={newUpdatedDueTime} required class="form-input"/>
         </div>
         <div class="modal-actions">
             <button type="button" class="modal-button modal-button-cancel" on:click={handleUpdateDueDateCancel}>Cancel</button>

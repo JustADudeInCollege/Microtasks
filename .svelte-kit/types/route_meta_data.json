@@ -11,6 +11,9 @@
 	"/api/auth/session": [
 		"src/routes/api/auth/session/+server.ts"
 	],
+	"/api/auth/timezone": [
+		"src/routes/api/auth/timezone/+server.ts"
+	],
 	"/api/chats": [
 		"src/routes/api/chats/+server.ts"
 	],

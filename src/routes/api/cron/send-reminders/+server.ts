@@ -16,6 +16,54 @@ function getFormattedDateString(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
+// Helper to get timezone offset in hours (e.g., "Asia/Manila" -> +8, "America/New_York" -> -5 or -4)
+function getTimezoneOffsetHours(timezone: string): number {
+  try {
+    const now = new Date();
+    // Get the offset by comparing UTC time with the timezone's local time
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      hour: 'numeric',
+      minute: 'numeric',
+      hour12: false,
+    });
+    const parts = formatter.formatToParts(now);
+    const hour = parseInt(parts.find(p => p.type === 'hour')?.value || '0');
+    const minute = parseInt(parts.find(p => p.type === 'minute')?.value || '0');
+    
+    const utcHour = now.getUTCHours();
+    const utcMinute = now.getUTCMinutes();
+    
+    let offsetHours = hour - utcHour + (minute - utcMinute) / 60;
+    
+    // Handle day boundary
+    if (offsetHours > 12) offsetHours -= 24;
+    if (offsetHours < -12) offsetHours += 24;
+    
+    return offsetHours;
+  } catch (e) {
+    console.warn(`[Timezone] Failed to parse timezone "${timezone}", defaulting to UTC`);
+    return 0; // Default to UTC
+  }
+}
+
+// Convert a date string (YYYY-MM-DD) and time string (HH:MM) in user's timezone to UTC Date
+function parseUserLocalDateTime(dateStr: string, timeStr: string | null, timezoneOffsetHours: number): Date {
+  const [year, month, day] = dateStr.split('-').map(Number);
+  let hours = 23, minutes = 59, seconds = 59; // Default to end of day
+  
+  if (timeStr && /^\d{2}:\d{2}$/.test(timeStr)) {
+    [hours, minutes] = timeStr.split(':').map(Number);
+    seconds = 0;
+  }
+  
+  // Create UTC date, then subtract the timezone offset to get the correct UTC time
+  // If user is at UTC+8 and says "14:00", the UTC time is 14:00 - 8 = 06:00 UTC
+  const utcHours = hours - timezoneOffsetHours;
+  
+  return new Date(Date.UTC(year, month - 1, day, utcHours, minutes, seconds));
+}
+
 export const GET: RequestHandler = async ({ url }) => {
   // 1. Authenticate the cron job request
   const providedSecret = url.searchParams.get('secret');
@@ -71,23 +119,31 @@ export const GET: RequestHandler = async ({ url }) => {
         continue;
       }
 
-      // Construct precise due date/time for the task
-      let taskDueDateTime: Date;
+      if (!userId) {
+        console.warn(`[API /send-reminders] Task ${taskDoc.id} is missing userId. Skipping.`);
+        continue;
+      }
+
+      // Fetch user's timezone from their profile (stored in credentials or users collection)
+      const userCredDoc = await adminDb.collection('credentials').doc(userId).get();
+      const userTimezone = userCredDoc.exists ? (userCredDoc.data()?.timezone || 'UTC') : 'UTC';
+      const userName = userCredDoc.exists ? (userCredDoc.data()?.username || 'User') : 'User';
+      const userEmail = userCredDoc.exists ? userCredDoc.data()?.email : null;
+      
+      // Get timezone offset for this user
+      const timezoneOffsetHours = getTimezoneOffsetHours(userTimezone);
+      console.log(`[API /send-reminders] User ${userId} timezone: ${userTimezone} (offset: ${timezoneOffsetHours}h)`);
+
+      // Construct precise due date/time for the task in UTC
+      let taskDueDateTimeUTC: Date;
       try {
-        const [year, month, day] = taskDueDateStr.split('-').map(Number);
-        let hours = 23, minutes = 59, seconds = 59; // Default to end of day if no time
-        if (taskDueTimeStr && /^\d{2}:\d{2}$/.test(taskDueTimeStr)) {
-          [hours, minutes] = taskDueTimeStr.split(':').map(Number);
-          seconds = 0; 
-        }
-        // Create date. Assuming dueDate and dueTime are in server's local timezone or a consistent one.
-        taskDueDateTime = new Date(year, month - 1, day, hours, minutes, seconds);
+        taskDueDateTimeUTC = parseUserLocalDateTime(taskDueDateStr, taskDueTimeStr, timezoneOffsetHours);
       } catch (e) {
         console.warn(`[API /send-reminders] Could not parse dueDate/dueTime for task ${taskDoc.id} ('${taskDueDateStr}' '${taskDueTimeStr}'). Skipping.`, e);
         continue;
       }
       
-      const timeDifferenceMs = taskDueDateTime.getTime() - now.getTime();
+      const timeDifferenceMs = taskDueDateTimeUTC.getTime() - now.getTime();
       const hoursDifference = timeDifferenceMs / (1000 * 60 * 60);
 
       // Check if due within the next 24 hours (and not past due by more than, e.g., 1 hour for cron processing delay)
@@ -97,16 +153,6 @@ export const GET: RequestHandler = async ({ url }) => {
         // console.log(`[API /send-reminders] Task ${taskDoc.id} (${taskTitle}) due in ${hoursDifference.toFixed(1)} hours. Outside 0-24hr window. Skipping.`);
         continue;
       }
-      
-      if (!userId) {
-        console.warn(`[API /send-reminders] Task ${taskDoc.id} is missing userId. Skipping.`);
-        continue;
-      }
-
-      // Fetch user's email and username from 'credentials' collection
-      const userCredDoc = await adminDb.collection('credentials').doc(userId).get();
-      const userName = userCredDoc.exists ? (userCredDoc.data()?.username || 'User') : 'User';
-      const userEmail = userCredDoc.exists ? userCredDoc.data()?.email : null;
 
       const appBaseUrl = APP_URL || 'https://microtasks-zoys.vercel.app/';
       const taskPageUrl = `${appBaseUrl}/tasks`;
