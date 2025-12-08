@@ -422,6 +422,9 @@ export const actions = {
             } else {
                 return fail(400, { taskForm: { error: 'Invalid due date format.', taskId } });
             }
+            // Reset reminder flags when due date changes so notifications are sent again
+            (taskUpdateData as any).reminderSent24hr = false;
+            (taskUpdateData as any).emailReminderSent24hr = false;
         }
 
         if (dueTime !== undefined) { // Only update if dueTime was provided in the form
@@ -506,6 +509,9 @@ export const actions = {
         } else {
             return fail(400, { updateDueDateForm: { error: 'Invalid new due date format.' }});
         }
+        // Reset reminder flags when due date changes so notifications are sent again
+        (updatePayload as any).reminderSent24hr = false;
+        (updatePayload as any).emailReminderSent24hr = false;
         
         try {
             const taskRef = tasksCollection.doc(taskId);

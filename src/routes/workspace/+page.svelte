@@ -49,10 +49,12 @@
 	}
 
 	function handleLogout() {
+		console.log('[Workspace] handleLogout called, showing confirmation modal');
 		showLogoutConfirm = true;
 	}
 
 	function confirmLogout() {
+		console.log('[Workspace] confirmLogout called, logging out');
 		showLogoutConfirm = false;
 		if (browser) {
 			localStorage.removeItem('microtask_username');
@@ -62,6 +64,7 @@
 	}
 
 	function cancelLogout() {
+		console.log('[Workspace] cancelLogout called');
 		showLogoutConfirm = false;
 	}
 
