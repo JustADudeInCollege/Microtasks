@@ -21,6 +21,7 @@
     let isLoadingOperation = false; // New state for loading indicator
     let isPageReady = false; // Page-level loading state - wait until all data is loaded
     let kanbanScrollContainer: HTMLElement; // Declare variable for scroll container
+    let handleTaskDeletedListener: ((e: Event) => void) | null = null;
 
     // --- COLLABORATION STATE ---
     let isShareModalOpen = false;
@@ -567,6 +568,19 @@
         };
         if (browser) document.addEventListener('click', handleGlobalClickListener);
 
+        // Global listener for task deletions happening elsewhere in the app
+        handleTaskDeletedListener = (evt: Event) => {
+            try {
+                console.log('[Board Page] Received global task-deleted event, performing full reload...');
+                if (typeof window !== 'undefined' && window.location) {
+                    window.location.reload();
+                }
+            } catch (err) {
+                console.error('[Board Page] Error handling task-deleted event (reload):', err);
+            }
+        };
+        if (typeof window !== 'undefined') window.addEventListener('microtask:task-deleted', handleTaskDeletedListener as EventListener);
+
         handleEscKeyListener = (event: KeyboardEvent) => {
             if (event.key === 'Escape') {
                 if (isConfirmationModalOpen) {
@@ -586,6 +600,7 @@
              if (browser) {
                 if (handleGlobalClickListener) document.removeEventListener('click', handleGlobalClickListener);
 			    if (handleEscKeyListener) document.removeEventListener('keydown', handleEscKeyListener);
+            if (handleTaskDeletedListener) window.removeEventListener('microtask:task-deleted', handleTaskDeletedListener as EventListener);
             }
             if (cardAnimationFrameId) cancelAnimationFrame(cardAnimationFrameId);
 		};

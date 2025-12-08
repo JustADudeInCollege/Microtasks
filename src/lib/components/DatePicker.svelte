@@ -99,8 +99,7 @@
         class="date-select month-select"
         class:dark={isDarkMode}
         bind:value={selectedMonth}
-        on:change={updateValue}
-        on:focus={initializeIfEmpty}
+            on:change={updateValue}
         aria-label="Month"
     >
         <option value="" disabled>Month</option>
@@ -114,7 +113,6 @@
         class:dark={isDarkMode}
         bind:value={selectedDay}
         on:change={updateValue}
-        on:focus={initializeIfEmpty}
         aria-label="Day"
     >
         <option value="" disabled>Day</option>
@@ -128,7 +126,6 @@
         class:dark={isDarkMode}
         bind:value={selectedYear}
         on:change={updateValue}
-        on:focus={initializeIfEmpty}
         aria-label="Year"
     >
         <option value="" disabled>Year</option>

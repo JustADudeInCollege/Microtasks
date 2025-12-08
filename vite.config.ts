@@ -9,7 +9,8 @@ export default defineConfig({
 	plugins: [sveltekit()],
 	server: {
 		host: '0.0.0.0',
-		port: 5174,
+		// Allow overriding the default port via the PORT environment variable for local testing.
+		port: Number(process.env.PORT) || 5174,
 		strictPort: true,
 		hmr: {
 			host: 'localhost',

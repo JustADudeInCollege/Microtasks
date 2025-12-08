@@ -289,7 +289,7 @@
         alt="Microtask Logo"
         class="absolute top-10 left-10 h-12 scale-250 z-20" 
     />
-    <h1 class={`text-3xl font-bold text-center mb-6 z-10 ${isDarkMode ? 'text-white' : 'text-black'}`} style="text-shadow: 2px 2px 8px rgba(0,0,0,0.7), -1px -1px 4px rgba(0,0,0,0.5);">Welcome to Microtask!</h1>
+    <h1 class={`text-3xl font-bold text-center mb-6 z-10 ${isDarkMode ? 'text-white' : 'text-black'}`} style=" -1px -1px 4px rgba(0,0,0,0.5);">Welcome to Microtask!</h1>
 
     {#if notificationMessage}
         <div

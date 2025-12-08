@@ -53,6 +53,7 @@
     export let handleGlobalClickListener: ((event: MouseEvent) => void) | null = null;
     export let handleEscKeyListener: ((event: KeyboardEvent) => void) | null = null;
     let dateTimeInterval: ReturnType<typeof setInterval> | null = null;
+    let handleTaskDeletedListener: ((e: Event) => void) | null = null;
 
     //modalfortask
     export let isTaskDetailModalOpen = false;
@@ -677,12 +678,27 @@
         allTasksFlatList = (data.tasks || []).map(mapRawTaskToPlaceholder);
         data = {...data}; 
 
+        // Listen for global task-deleted events so this page can refresh when tasks are deleted elsewhere
+        handleTaskDeletedListener = (evt: Event) => {
+            try {
+                console.log('Received global task-deleted event, performing full reload...');
+                // Perform a literal full reload (like F5)
+                if (typeof window !== 'undefined' && window.location) {
+                    window.location.reload();
+                }
+            } catch (err) {
+                console.error('Error while handling global task-deleted event (reload):', err);
+            }
+        };
+        if (typeof window !== 'undefined') window.addEventListener('microtask:task-deleted', handleTaskDeletedListener as EventListener);
+
 
 		return () => { 
              if (dateTimeInterval) clearInterval(dateTimeInterval);
              if (browser) {
                 if (handleGlobalClickListener) document.removeEventListener('click', handleGlobalClickListener);
 			    if (handleEscKeyListener) document.removeEventListener('keydown', handleEscKeyListener);
+            if (handleTaskDeletedListener) window.removeEventListener('microtask:task-deleted', handleTaskDeletedListener as EventListener);
             }
             if (cardAnimationFrameId) cancelAnimationFrame(cardAnimationFrameId);
             if (columnAnimationFrameId) cancelAnimationFrame(columnAnimationFrameId); // Cleanup column animation

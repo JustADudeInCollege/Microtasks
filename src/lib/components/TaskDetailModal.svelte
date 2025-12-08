@@ -113,6 +113,14 @@
         if (task) {
             isLoadingOperation = true; // Start loading for delete operation
             dispatch('delete', { taskId: task.id });
+            try {
+                // Also broadcast a global event so other pages/components can react (e.g. invalidateAll())
+                if (typeof window !== 'undefined' && window?.dispatchEvent) {
+                    window.dispatchEvent(new CustomEvent('microtask:task-deleted', { detail: { taskId: task.id } }));
+                }
+            } catch (e) {
+                console.warn('Failed to dispatch global task-deleted event', e);
+            }
         }
         showDeleteConfirm = false;
         // closeModalAndReset(); // Parent will handle closing after delete success/failure
