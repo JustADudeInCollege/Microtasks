@@ -280,8 +280,8 @@
 <main class={`flex flex-col justify-center items-center min-h-screen w-full relative overflow-hidden ${isDarkMode ? 'bg-zinc-900' : 'bg-gray-100'}`}>
     <!-- Background image -->
     <div 
-        class="absolute inset-0 z-0 bg-cover bg-bottom bg-no-repeat"
-        style={`background-image: url('${isDarkMode ? '/Darkmode.png' : '/background.png'}');`}
+        class="absolute inset-0 z-0 bg-no-repeat bg-center"
+        style={`background-image: url('${isDarkMode ? '/Darkmode.png' : '/background.png'}'); background-size: 85%;`}
     ></div>
     <img
         src={isDarkMode ? "/logonamindarkmode.png" : "/logonamin.png"}
