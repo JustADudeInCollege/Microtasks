@@ -9,6 +9,7 @@
 	import { invalidateAll } from '$app/navigation'; // Crucial for reloading data
 	import type { PageData, ActionData } from './$types';
 	import AppHeader from '$lib/components/AppHeader.svelte';
+	import PendingInvitations from '$lib/components/PendingInvitations.svelte';
 
 	export let data: PageData;
 	export let form: ActionData; // This is ActionData from ./$types
@@ -434,6 +435,9 @@
 		
 		<main class="main-area">
 			<div class="container">
+				<!-- Pending Invitations Section -->
+				<PendingInvitations on:accepted={() => invalidateAll()} />
+				
 				<h2 class="section-title">Your Workspaces</h2>
 					
 				<section class="workspace-section">
@@ -442,29 +446,48 @@
 						<div class="workspace-grid">
 							{#each boards as board (board.id)}
 								<a href="/workspace/{board.id}" class="board-card">
-									<h4 class="board-card-title">{board.title}</h4>
-									{#if board.createdAtISO}
-										<p class="board-card-meta">
-											Created: {new Date(board.createdAtISO).toLocaleDateString()}
-										</p>
+									<div class="board-card-header">
+										<h4 class="board-card-title">{board.title}</h4>
+										{#if board.isCollaborative}
+											<span class="collab-badge" title="Shared workspace">
+												<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+													<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+													<circle cx="9" cy="7" r="4"></circle>
+													<path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+													<path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+												</svg>
+											</span>
+										{/if}
+									</div>
+									<div class="board-card-info">
+										{#if board.createdAtISO}
+											<p class="board-card-meta">
+												Created: {new Date(board.createdAtISO).toLocaleDateString()}
+											</p>
+										{/if}
+										{#if !board.isOwner}
+											<span class="role-badge {board.userRole}">{board.userRole}</span>
+										{/if}
+									</div>
+									{#if board.isOwner}
+										<button
+											on:click|stopPropagation|preventDefault={() => requestDeleteBoard(board)}
+											aria-label={`Delete workspace ${board.title}`}
+											class="board-card-delete-btn"
+											disabled={isDeletingBoard && boardToConfirmDelete?.id === board.id}
+										>
+											{#if isDeletingBoard && boardToConfirmDelete?.id === board.id}
+												<svg class="spinner" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+													<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+													<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+												</svg>
+											{:else}
+												<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="icon-sm"><path fill-rule="evenodd" d="M8.75 1A2.75 2.75 0 0 0 6 3.75v.443c-.795.077-1.58.177-2.34.294a.75.75 0 0 0-.706.705c-.117.76-.217 1.545-.294 2.34V16.25A2.75 2.75 0 0 0 5.25 19h9.5A2.75 2.75 0 0 0 17.5 16.25V7.534c-.077-.795-.177-1.58-.294-2.34a.75.75 0 0 0-.705-.705c-.76-.117-1.545-.217-2.34-.294V3.75A2.75 2.75 0 0 0 11.25 1h-2.5ZM10 4c.84 0 1.67.036 2.5.108V5.25a.75.75 0 0 0 .75.75h1.142c.072.83.108 1.66.108 2.5v6.392c0 .84-.036 1.67-.108 2.5H6.608c-.072-.83-.108-1.66-.108-2.5V8.5c0-.84.036 1.67.108 2.5h1.142a.75.75 0 0 0 .75-.75V4.108C8.33 4.036 9.16 4 10 4ZM8.58 7.72a.75.75 0 0 0-1.06-1.06L6.25 8a.75.75 0 0 0-1.06 1.06L6.44 10l-1.27 1.27a.75.75 0 1 0 1.06 1.06L7.5 11.06l1.27 1.27a.75.75 0 1 0 1.06-1.06L8.56 10l1.27-1.27a.75.75 0 0 0-1.06-1.06L7.5 8.94l.06-.06Z" clip-rule="evenodd" /></svg>
+											{/if}
+										</button>
 									{/if}
-									<button
-										on:click|stopPropagation|preventDefault={() => requestDeleteBoard(board)}
-										aria-label={`Delete workspace ${board.title}`}
-										class="board-card-delete-btn"
-										disabled={isDeletingBoard && boardToConfirmDelete?.id === board.id}
-									>
-										{#if isDeletingBoard && boardToConfirmDelete?.id === board.id}
-											<svg class="spinner" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-												<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-												<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-											</svg>
-										{:else}
-											<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="icon-sm"><path fill-rule="evenodd" d="M8.75 1A2.75 2.75 0 0 0 6 3.75v.443c-.795.077-1.58.177-2.34.294a.75.75 0 0 0-.706.705c-.117.76-.217 1.545-.294 2.34V16.25A2.75 2.75 0 0 0 5.25 19h9.5A2.75 2.75 0 0 0 17.5 16.25V7.534c-.077-.795-.177-1.58-.294-2.34a.75.75 0 0 0-.705-.705c-.76-.117-1.545-.217-2.34-.294V3.75A2.75 2.75 0 0 0 11.25 1h-2.5ZM10 4c.84 0 1.67.036 2.5.108V5.25a.75.75 0 0 0 .75.75h1.142c.072.83.108 1.66.108 2.5v6.392c0 .84-.036 1.67-.108 2.5H6.608c-.072-.83-.108-1.66-.108-2.5V8.5c0-.84.036 1.67.108 2.5h1.142a.75.75 0 0 0 .75-.75V4.108C8.33 4.036 9.16 4 10 4ZM8.58 7.72a.75.75 0 0 0-1.06-1.06L6.25 8a.75.75 0 0 0-1.06 1.06L6.44 10l-1.27 1.27a.75.75 0 1 0 1.06 1.06L7.5 11.06l1.27 1.27a.75.75 0 1 0 1.06-1.06L8.56 10l1.27-1.27a.75.75 0 0 0-1.06-1.06L7.5 8.94l.06-.06Z" clip-rule="evenodd" /></svg>
-									{/if}
-								</button>
-							</a>
-						{/each}
+								</a>
+							{/each}
 						<button on:click={openAddBoardModal} class="add-workspace-card">
 							<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="icon-lg"><path d="M10.75 4.75a.75.75 0 0 0-1.5 0v4.5h-4.5a.75.75 0 0 0 0 1.5h4.5v4.5a.75.75 0 0 0 1.5 0v-4.5h4.5a.75.75 0 0 0 0-1.5h-4.5v-4.5Z" /></svg>
 							<span class="text-sm font-medium">Add Workspace</span>
@@ -1114,11 +1137,68 @@
 :global(body.dark) .board-card:hover, :global(body.dark) .template-card:hover { box-shadow: var(--dark-shadow-lg); }
 
 .board-card { text-decoration: none; }
+.board-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: var(--space-2);
+}
 .board-card-title {
     font-size: 1.25rem; font-weight: 600;
     color: var(--light-accent-primary-text);
-    margin-bottom: var(--space-2);
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    flex: 1;
+}
+.collab-badge {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.25rem;
+    background-color: #dbeafe;
+    color: #1e40af;
+    border-radius: 4px;
+    flex-shrink: 0;
+}
+:global(body.dark) .collab-badge {
+    background-color: #1e3a8a;
+    color: #93c5fd;
+}
+.board-card-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.5rem;
+}
+.role-badge {
+    font-size: 0.65rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    padding: 0.15rem 0.4rem;
+    border-radius: 9999px;
+}
+.role-badge.admin {
+    background-color: #dbeafe;
+    color: #1e40af;
+}
+.role-badge.editor {
+    background-color: #dcfce7;
+    color: #166534;
+}
+.role-badge.viewer {
+    background-color: #f3f4f6;
+    color: #374151;
+}
+:global(body.dark) .role-badge.admin {
+    background-color: #1e3a8a;
+    color: #dbeafe;
+}
+:global(body.dark) .role-badge.editor {
+    background-color: #14532d;
+    color: #dcfce7;
+}
+:global(body.dark) .role-badge.viewer {
+    background-color: #374151;
+    color: #d1d5db;
 }
 :global(body.dark) .board-card-title { color: var(--dark-accent-primary-text); }
 .board-card-meta { font-size: 0.8rem; color: var(--light-text-tertiary); }

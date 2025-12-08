@@ -3,6 +3,7 @@ import type { RequestHandler } from './$types.js';
 import { adminDb, admin } from '$lib/server/firebaseAdmin.js'; // Import admin for messaging
 import type { SendResponse } from 'firebase-admin/messaging'; // Import type for SendResponse
 import { env } from '$env/dynamic/private';
+import { sendTaskReminderEmail, type TaskEmailData } from '$lib/server/emailService.js';
 
 const CRON_SECRET = env.CRON_SECRET;
 const APP_URL = env.APP_URL;
@@ -23,7 +24,7 @@ export const GET: RequestHandler = async ({ url }) => {
     throw SvelteKitError(401, 'Unauthorized');
   }
 
-  console.log('[API /send-reminders] Cron job triggered. Processing tasks for <= 24hr FCM reminders...');
+  console.log('[API /send-reminders] Cron job triggered. Processing tasks for <= 24hr FCM and email reminders...');
   
   const now = new Date(); // Current date and time
   const todayDateString = getFormattedDateString(now);
@@ -31,7 +32,8 @@ export const GET: RequestHandler = async ({ url }) => {
   tomorrow.setDate(now.getDate() + 1);
   const tomorrowDateString = getFormattedDateString(tomorrow);
 
-  let notificationsSentCount = 0;
+  let pushNotificationsSentCount = 0;
+  let emailsSentCount = 0;
   let tasksConsideredCount = 0; 
 
   try {
@@ -45,7 +47,7 @@ export const GET: RequestHandler = async ({ url }) => {
 
     if (tasksSnapshot.empty) {
       console.log(`[API /send-reminders] No tasks found due today or tomorrow for potential reminders.`);
-      return json({ message: 'No tasks due today or tomorrow for potential reminders.', tasksConsidered: 0, notificationsSent: 0 });
+      return json({ message: 'No tasks due today or tomorrow for potential reminders.', tasksConsidered: 0, pushNotificationsSent: 0, emailsSent: 0 });
     }
 
     console.log(`[API /send-reminders] Found ${tasksSnapshot.docs.length} tasks due today or tomorrow to consider.`);
@@ -101,11 +103,36 @@ export const GET: RequestHandler = async ({ url }) => {
         continue;
       }
 
-      // Fetch user's email and username from 'credentials' collection (optional for FCM, but good for logs)
+      // Fetch user's email and username from 'credentials' collection
       const userCredDoc = await adminDb.collection('credentials').doc(userId).get();
       const userName = userCredDoc.exists ? (userCredDoc.data()?.username || 'User') : 'User';
+      const userEmail = userCredDoc.exists ? userCredDoc.data()?.email : null;
 
-      // 4. Fetch FCM tokens for the user
+      const appBaseUrl = APP_URL || 'https://microtasks-zoys.vercel.app/';
+      const taskPageUrl = `${appBaseUrl}/tasks`;
+
+      // 4a. Send Email Notification
+      if (userEmail && !task.emailReminderSent24hr) {
+        const emailData: TaskEmailData = {
+          taskTitle: taskTitle,
+          taskDescription: task.description || undefined,
+          dueDate: taskDueDateStr,
+          dueTime: taskDueTimeStr || undefined,
+          hoursUntilDue: hoursDifference,
+          taskUrl: taskPageUrl
+        };
+
+        const emailSent = await sendTaskReminderEmail(userEmail, userName, emailData);
+        if (emailSent) {
+          emailsSentCount++;
+          await adminDb.collection('tasks').doc(taskDoc.id).update({ emailReminderSent24hr: true });
+          console.log(`[API /send-reminders] Email reminder sent to ${userEmail} for task "${taskTitle}".`);
+        }
+      } else if (!userEmail) {
+        console.log(`[API /send-reminders] No email found for user ${userId} (${userName}). Skipping email for task ${taskTitle}.`);
+      }
+
+      // 4b. Fetch FCM tokens for push notification
       const fcmTokensSnapshot = await adminDb.collection('users').doc(userId).collection('fcmTokens').get();
       if (fcmTokensSnapshot.empty) {
         console.log(`[API /send-reminders] No FCM tokens found for user ${userId} (${userName}). Skipping push notification for task ${taskTitle}.`);
@@ -119,8 +146,6 @@ export const GET: RequestHandler = async ({ url }) => {
       }
 
       // 5. Send Push Notification using Firebase Admin SDK
-      const appBaseUrl = APP_URL || 'https://microtasks-zoys.vercel.app/';
-      const taskPageUrl = `${appBaseUrl}/tasks`; 
 
       const messagePayload = {
         notification: {
@@ -142,7 +167,7 @@ export const GET: RequestHandler = async ({ url }) => {
         
         let successCount = response.successCount;
         if (successCount > 0) {
-          notificationsSentCount += successCount;
+          pushNotificationsSentCount += successCount;
           console.log(`[API /send-reminders] Successfully sent ${successCount} push notifications for task "${taskTitle}" to user ${userId}.`);
           // Mark that the 24hr reminder has been sent for this task
           await adminDb.collection('tasks').doc(taskDoc.id).update({ reminderSent24hr: true });
@@ -167,11 +192,12 @@ export const GET: RequestHandler = async ({ url }) => {
       }
     } // End of for loop
 
-    console.log(`[API /send-reminders] Finished processing. Tasks considered: ${tasksConsideredCount}. Push notifications sent to ${notificationsSentCount} device(s).`);
+    console.log(`[API /send-reminders] Finished processing. Tasks considered: ${tasksConsideredCount}. Push notifications: ${pushNotificationsSentCount}. Emails sent: ${emailsSentCount}.`);
     return json({
       message: 'Reminder processing complete.',
       tasksConsidered: tasksConsideredCount,
-      notificationsSent: notificationsSentCount,
+      pushNotificationsSent: pushNotificationsSentCount,
+      emailsSent: emailsSentCount
     });
 
   } catch (err: any) {

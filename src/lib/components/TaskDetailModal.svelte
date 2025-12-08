@@ -1,16 +1,22 @@
 <script lang="ts">
 	import type { TaskForFrontend } from '$lib/types/task'; // Ensure path is correct
+	import type { WorkspaceMemberForFrontend, MemberRole, TaskAssignment } from '$lib/types/collaboration';
 	import { createEventDispatcher } from 'svelte';
 	import { fly } from 'svelte/transition';
 	import { quintOut } from 'svelte/easing';
     import { enhance } from '$app/forms'; // For form enhancement
     import type { SubmitFunction, ActionResult } from '@sveltejs/kit';
     import LoadingIndicator from '$lib/components/LoadingIndicator.svelte'; // Import LoadingIndicator
+    import AssigneePicker from '$lib/components/AssigneePicker.svelte';
 
 	export let task: TaskForFrontend | null;
 	export let isOpen: boolean;
+	export let workspaceId: string = '';
+	export let workspaceMembers: WorkspaceMemberForFrontend[] = [];
+	export let userRole: MemberRole | 'owner' = 'viewer';
 
     let isLoadingOperation = false; // New state for loading indicator
+	let taskAssignments: TaskAssignment[] = [];
 
 	const dispatch = createEventDispatcher();
 
@@ -44,12 +50,29 @@
         initializedForTaskId = null; // Reset so next time we enter edit mode, we re-initialize
     }
 
+	// Load task assignees when task changes
+	$: if (task && workspaceId && isOpen) {
+		loadTaskAssignees(task.id);
+	}
+
+	async function loadTaskAssignees(taskId: string) {
+		try {
+			const res = await fetch(`/api/workspace/assignments?taskId=${taskId}`);
+			if (res.ok) {
+				const data = await res.json();
+				taskAssignments = data.assignments || [];
+			}
+		} catch (err) {
+			console.error('Failed to load task assignees:', err);
+		}
+	}
 
     function closeModalAndReset() {
         isEditMode = false; // Ensure edit mode is reset
         showDeleteConfirm = false; // Ensure delete confirm is reset
         isLoadingOperation = false; // Stop loading when modal closes
         initializedForTaskId = null; // Reset initialization tracker
+		taskAssignments = [];
 		dispatch('close');
 	}
 
@@ -237,6 +260,22 @@
                         <span>{formatDate(task.createdAtISO)}</span>
                     </div>
                 </div>
+
+				<!-- Assignees Section (only show if workspace has members) -->
+				{#if workspaceMembers.length > 0 && task}
+					<div class="assignees-section">
+						<strong>Assigned To:</strong>
+						<AssigneePicker 
+							taskId={task.id}
+							{workspaceId}
+							members={workspaceMembers}
+							currentAssignments={taskAssignments}
+							canEdit={userRole === 'owner' || userRole === 'admin'}
+							on:assigned={(e) => { taskAssignments = [...taskAssignments, e.detail.assignment]; dispatch('assignmentsChanged'); }}
+							on:unassigned={(e) => { taskAssignments = taskAssignments.filter(a => a.userId !== e.detail.userId); dispatch('assignmentsChanged'); }}
+						/>
+					</div>
+				{/if}
 
                 <div class="modal-actions">
                     <button class="button-delete" on:click={promptDelete}>Delete Task</button>
@@ -468,5 +507,23 @@
     :global(body.dark) .button-delete-confirm:hover {
         background-color: #7f1d1d;
     }
+
+	/* Assignees Section */
+	.assignees-section {
+		margin-top: 1.5rem;
+		padding-top: 1rem;
+		border-top: 1px solid var(--border-light, #e5e7eb);
+	}
+	.assignees-section strong {
+		display: block;
+		margin-bottom: 0.75rem;
+		color: var(--text-light-primary, #333);
+	}
+	:global(body.dark) .assignees-section {
+		border-top-color: var(--border-dark, #4a5568);
+	}
+	:global(body.dark) .assignees-section strong {
+		color: var(--text-dark-primary, #f3f4f6);
+	}
 
 </style>

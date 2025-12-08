@@ -26,7 +26,7 @@
  * ```
  */
 declare module '$env/static/private' {
-	export const OPENROUTER_API_KEY: string;
+	export const GROQ_API_KEY: string;
 	export const FIREBASE_ADMIN_SDK_JSON: string;
 	export const ALLUSERSPROFILE: string;
 	export const APPDATA: string;
@@ -42,7 +42,7 @@ declare module '$env/static/private' {
 	export const ComSpec: string;
 	export const DriverData: string;
 	export const EDITOR: string;
-	export const EFC_12724: string;
+	export const EFC_12688: string;
 	export const FPS_BROWSER_APP_PROFILE_STRING: string;
 	export const FPS_BROWSER_USER_PROFILE_STRING: string;
 	export const GIT_ASKPASS: string;
@@ -149,7 +149,7 @@ declare module '$env/static/public' {
  */
 declare module '$env/dynamic/private' {
 	export const env: {
-		OPENROUTER_API_KEY: string;
+		GROQ_API_KEY: string;
 		FIREBASE_ADMIN_SDK_JSON: string;
 		ALLUSERSPROFILE: string;
 		APPDATA: string;
@@ -165,7 +165,7 @@ declare module '$env/dynamic/private' {
 		ComSpec: string;
 		DriverData: string;
 		EDITOR: string;
-		EFC_12724: string;
+		EFC_12688: string;
 		FPS_BROWSER_APP_PROFILE_STRING: string;
 		FPS_BROWSER_USER_PROFILE_STRING: string;
 		GIT_ASKPASS: string;

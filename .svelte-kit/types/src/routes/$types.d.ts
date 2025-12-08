@@ -13,8 +13,8 @@ type OptionalUnion<U extends Record<string, any>, A extends keyof U = U extends 
 export type Snapshot<T = any> = Kit.Snapshot<T>;
 type PageServerParentData = EnsureDefined<LayoutServerData>;
 type PageParentData = EnsureDefined<LayoutData>;
-type LayoutRouteId = RouteId | "/" | "/ai-chat" | "/calendar" | "/dashboard" | "/forgotpass" | "/home" | "/kanban" | "/login" | "/settings" | "/signup" | "/support" | "/tasks" | "/workspace" | "/workspace/[boardId]" | null
-type LayoutParams = RouteParams & { boardId?: string }
+type LayoutRouteId = RouteId | "/" | "/ai-chat" | "/calendar" | "/dashboard" | "/forgotpass" | "/home" | "/join/[token]" | "/kanban" | "/login" | "/settings" | "/signup" | "/support" | "/tasks" | "/workspace" | "/workspace/[boardId]" | null
+type LayoutParams = RouteParams & { token?: string; boardId?: string }
 type LayoutParentData = EnsureDefined<{}>;
 
 export type PageServerLoad<OutputData extends OutputDataShape<PageServerParentData> = OutputDataShape<PageServerParentData>> = Kit.ServerLoad<RouteParams, PageServerParentData, OutputData, RouteId>;

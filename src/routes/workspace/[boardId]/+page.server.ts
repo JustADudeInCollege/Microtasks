@@ -3,12 +3,16 @@ import { adminDb } from '$lib/server/firebaseAdmin.js';
 import { Timestamp, FieldValue } from 'firebase-admin/firestore';
 import type { CollectionReference, DocumentReference, Query } from 'firebase-admin/firestore'; // Import Query
 import { fail, redirect } from '@sveltejs/kit';
+import { getUserRole, getWorkspaceMembers, canPerformAction } from '$lib/server/collaborationService.js';
+import type { MemberRole, WorkspaceMember } from '$lib/types/collaboration.js';
 
 // Interface for Workspace/Board data sent to the frontend
 export interface WorkspaceForFrontend {
     id: string;
     name: string;
     createdAtISO?: string | null;
+    userRole?: MemberRole | null;
+    isCollaborative?: boolean;
 }
 
 // Interface for the raw data structure from Firestore for Tasks
@@ -179,15 +183,24 @@ export const load: PageServerLoad = async ({ locals, params, url }: PageServerLo
             const workspaceDoc = await workspaceDocRef.get();
             if (workspaceDoc.exists) {
                 const data = workspaceDoc.data();
-                if (data && data.userId === userId) { // Check ownership
+                // Check if user has access (owner or member)
+                const userRole = await getUserRole(currentBoardIdFromParams, userId);
+                
+                if (userRole) {
+                    // Get member count to check if collaborative
+                    const members = await getWorkspaceMembers(currentBoardIdFromParams);
+                    const isCollaborative = members.length > 1;
+                    
                     currentWorkspace = {
                         id: workspaceDoc.id,
-                        name: data.title || 'Unnamed Workspace',
-                        createdAtISO: data.createdAt instanceof Timestamp ? data.createdAt.toDate().toISOString() : null
+                        name: data?.title || 'Unnamed Workspace',
+                        createdAtISO: data?.createdAt instanceof Timestamp ? data.createdAt.toDate().toISOString() : null,
+                        userRole: userRole,
+                        isCollaborative: isCollaborative
                     };
-                    console.log(`[LOAD /workspace/${params.boardId}] Current workspace details fetched:`, currentWorkspace.name); // DEBUG
-                } else if (data && data.userId !== userId) {
-                    console.warn(`[LOAD /workspace/${params.boardId}] User ${userId} does not own workspace ${currentBoardIdFromParams}.`); // DEBUG
+                    console.log(`[LOAD /workspace/${params.boardId}] Current workspace details fetched:`, currentWorkspace.name, `User role: ${userRole}`); // DEBUG
+                } else {
+                    console.warn(`[LOAD /workspace/${params.boardId}] User ${userId} does not have access to workspace ${currentBoardIdFromParams}.`); // DEBUG
                      return { // Or throw error(403, 'Forbidden');
                         user: userForFrontend,
                         tasks: [],
@@ -226,15 +239,18 @@ export const load: PageServerLoad = async ({ locals, params, url }: PageServerLo
     }
 
 
-    // Fetch tasks for the current user AND the current board
+    // Fetch tasks for the workspace (all tasks in shared workspace, not just user's tasks)
     try {
         console.log(`[LOAD /workspace/${params.boardId}] Building Firestore query for tasks...`); // DEBUG
-        let firestoreQuery: Query<FetchedTaskData> = tasksCollection.where('userId', '==', userId);
+        
+        // For collaborative workspaces, get all tasks in the workspace
+        // For non-collaborative, we still filter by workspace ID only
+        let firestoreQuery: Query<FetchedTaskData>;
 
         // CRUCIAL: Filter by the boardId from the route parameter
         if (currentBoardIdFromParams && currentBoardIdFromParams.trim() !== '') {
-            firestoreQuery = firestoreQuery.where('boardId', '==', currentBoardIdFromParams);
-            console.log(`[LOAD /workspace/${params.boardId}] Querying tasks with userId: '${userId}' AND boardId: '${currentBoardIdFromParams}'`); // DEBUG
+            firestoreQuery = tasksCollection.where('boardId', '==', currentBoardIdFromParams);
+            console.log(`[LOAD /workspace/${params.boardId}] Querying tasks with boardId: '${currentBoardIdFromParams}'`); // DEBUG
         } else {
             // This state should ideally not be reached if boardId is a required param.
             // If it can be optional, then this means "show all tasks for user if no boardId".
@@ -425,7 +441,17 @@ export const actions: Actions = {
             const taskRef = tasksCollection.doc(taskId); 
             const taskDoc = await taskRef.get();
             if (!taskDoc.exists) return fail(404, { taskForm: { error: 'Task not found.' } });
-            if (taskDoc.data()?.userId !== userId) return fail(403, { taskForm: { error: 'Permission denied.' } });
+            
+            const taskData = taskDoc.data()!;
+            const workspaceId = taskData.boardId;
+            
+            // Check if user is the task owner OR has edit permission in the workspace
+            const isTaskOwner = taskData.userId === userId;
+            const canEdit = workspaceId ? await canPerformAction(workspaceId, userId, 'edit') : false;
+            
+            if (!isTaskOwner && !canEdit) {
+                return fail(403, { taskForm: { error: 'Permission denied.' } });
+            }
             
             // Handle isCompleted and completedAt
             if (isCompletedString !== undefined) {
@@ -484,7 +510,17 @@ export const actions: Actions = {
             const taskRef = tasksCollection.doc(taskId);
             const taskDoc = await taskRef.get();
             if (!taskDoc.exists) return fail(404, { updateDueDateForm: { error: 'Task not found.' }});
-            if (taskDoc.data()?.userId !== userId) return fail(403, { updateDueDateForm: { error: 'Permission denied.' }});
+            
+            const taskData = taskDoc.data()!;
+            const workspaceId = taskData.boardId;
+            
+            // Check if user is the task owner OR has edit permission in the workspace
+            const isTaskOwner = taskData.userId === userId;
+            const canEdit = workspaceId ? await canPerformAction(workspaceId, userId, 'edit') : false;
+            
+            if (!isTaskOwner && !canEdit) {
+                return fail(403, { updateDueDateForm: { error: 'Permission denied.' }});
+            }
             
             await taskRef.update(updatePayload);
             return { updateDueDateForm: { success: true, message: 'Task due date updated successfully.' }};
@@ -507,7 +543,16 @@ export const actions: Actions = {
             const taskDoc = await taskRef.get();
             const taskDataFromDb = taskDoc.data(); 
             if (!taskDataFromDb) return fail(404, { toggleCompleteForm: { error: 'Task not found.' } });
-            if (taskDataFromDb.userId !== userId) return fail(403, { toggleCompleteForm: { error: 'Permission denied.' } });
+            
+            const workspaceId = taskDataFromDb.boardId;
+            
+            // Check if user is the task owner OR has edit permission in the workspace
+            const isTaskOwner = taskDataFromDb.userId === userId;
+            const canEdit = workspaceId ? await canPerformAction(workspaceId, userId, 'edit') : false;
+            
+            if (!isTaskOwner && !canEdit) {
+                return fail(403, { toggleCompleteForm: { error: 'Permission denied.' } });
+            }
 
             const newCompletedState = !currentIsCompleted;
             const updatePayload: { isCompleted: boolean; lastModified: FieldValue; completedAt: FieldValue | null } = {
@@ -533,7 +578,17 @@ export const actions: Actions = {
             const taskRef = tasksCollection.doc(taskId);
             const taskDoc = await taskRef.get();
             if (!taskDoc.exists) return fail(404, { deleteTaskForm: { error: 'Task not found.' } });
-            if (taskDoc.data()?.userId !== userId) return fail(403, { deleteTaskForm: { error: 'Permission denied.' } });
+            
+            const taskData = taskDoc.data()!;
+            const workspaceId = taskData.boardId;
+            
+            // Check if user is the task owner OR has delete permission in the workspace
+            const isTaskOwner = taskData.userId === userId;
+            const canDelete = workspaceId ? await canPerformAction(workspaceId, userId, 'delete') : false;
+            
+            if (!isTaskOwner && !canDelete) {
+                return fail(403, { deleteTaskForm: { error: 'Permission denied.' } });
+            }
             await taskRef.delete();
             return { deleteTaskForm: { successMessage: 'Task deleted successfully.' } };
         } catch (error: any) {
@@ -556,9 +611,16 @@ export const actions: Actions = {
             for (const taskId of taskIds) {
                 const taskRef = tasksCollection.doc(taskId); 
                 const taskDoc = await taskRef.get();
-                if (taskDoc.exists && taskDoc.data()?.userId === userId) {
-                    batch.delete(taskRef);
-                    deletedCount++;
+                if (taskDoc.exists) {
+                    const taskData = taskDoc.data()!;
+                    const workspaceId = taskData.boardId;
+                    const isTaskOwner = taskData.userId === userId;
+                    const canDelete = workspaceId ? await canPerformAction(workspaceId, userId, 'delete') : false;
+                    
+                    if (isTaskOwner || canDelete) {
+                        batch.delete(taskRef);
+                        deletedCount++;
+                    }
                 }
             }
             if (deletedCount > 0) await batch.commit();

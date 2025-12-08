@@ -4,11 +4,16 @@ import { adminDb } from '$lib/server/firebaseAdmin.js';
 import { fail, redirect, error as SvelteKitError } from '@sveltejs/kit';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { generateEntirePlanWithAI } from '$lib/server/aiService';
+import { getUserAccessibleWorkspaces, getUserRole, getWorkspaceMembers } from '$lib/server/collaborationService.js';
+import type { MemberRole } from '$lib/types/collaboration.js';
 
 export interface BoardForFrontend {
     id:string;
     title: string;
-    createdAtISO?: string | null; 
+    createdAtISO?: string | null;
+    userRole?: MemberRole | null;
+    isOwner?: boolean;
+    isCollaborative?: boolean;
 }
 
 interface UserForFrontend {
@@ -44,24 +49,43 @@ export const load = async ({ locals }: PageServerLoadEvent) => {
 
         if (!pageLoadError) { 
             try {
-                const boardsSnapshot = await adminDb.collection('workspaces') 
-                    .where('userId', '==', userId)
-                    .orderBy('createdAt', 'desc') 
-                    .get();
-
-                boardsForFrontend = boardsSnapshot.docs.map(doc => {
-                    const data = doc.data();
+                // Get all workspaces user has access to (owned + shared)
+                const accessibleWorkspaceIds = await getUserAccessibleWorkspaces(userId);
+                
+                // Fetch workspace details for all accessible workspaces
+                const boardsPromises = accessibleWorkspaceIds.map(async (wsId) => {
+                    const wsDoc = await adminDb.collection('workspaces').doc(wsId).get();
+                    if (!wsDoc.exists) return null;
+                    
+                    const data = wsDoc.data()!;
+                    const userRole = await getUserRole(wsId, userId);
+                    const members = await getWorkspaceMembers(wsId);
+                    
                     let createdAtISO = null;
                     if (data.createdAt && data.createdAt instanceof Timestamp) {
                         createdAtISO = data.createdAt.toDate().toISOString();
                     } else if (data.createdAt && typeof data.createdAt === 'object' && (data.createdAt as any)._seconds) {
                         createdAtISO = new Date((data.createdAt as any)._seconds * 1000).toISOString();
                     }
+                    
                     return {
-                        id: doc.id,
+                        id: wsDoc.id,
                         title: data.title || 'Untitled Workspace',
                         createdAtISO: createdAtISO,
+                        userRole: userRole,
+                        isOwner: data.userId === userId,
+                        isCollaborative: members.length > 1,
                     };
+                });
+                
+                const boardsResults = await Promise.all(boardsPromises);
+                boardsForFrontend = boardsResults.filter((b): b is BoardForFrontend => b !== null);
+                
+                // Sort by creation date (most recent first)
+                boardsForFrontend.sort((a, b) => {
+                    const dateA = a.createdAtISO ? new Date(a.createdAtISO).getTime() : 0;
+                    const dateB = b.createdAtISO ? new Date(b.createdAtISO).getTime() : 0;
+                    return dateB - dateA;
                 });
             } catch (dbFetchError: any) {
                 console.error(`[Workspace Load] Error fetching boards for user ${userId}:`, dbFetchError);

@@ -27,6 +27,16 @@
   let showPassword = false;
   let showConfirmPassword = false;
   let isLoading = false; // Loading state for async operations
+  let isDarkMode = false;
+
+  // --- Lifecycle Hook ---
+  onMount(() => {
+    // Load dark mode preference
+    const savedTheme = localStorage.getItem('theme');
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    isDarkMode = savedTheme === 'dark' || (!savedTheme && prefersDark);
+    document.body.classList.toggle('dark', isDarkMode);
+  });
 
   // --- Password Validation ---
   // Checks if the password meets the minimum requirements
@@ -267,16 +277,17 @@
 </script>
 
 <main
-  class="flex flex-col justify-center items-center min-h-screen w-full h-full bg-cover bg-fixed"
-  style="background-image: url('/background.png'); background-position: center +783px;"
+  class={`flex flex-col justify-center items-center min-h-screen w-full h-full bg-cover bg-fixed ${isDarkMode ? 'bg-zinc-900' : 'bg-gray-100'}`}
+  style="background-image: url('{isDarkMode ? '/Darkmode.png' : '/background.png'}'); background-position: center bottom;"
 >
-  <img src="/logonamin.png" alt="Microtask Logo" class="absolute top-10 left-10 h-12 scale-150 md:scale-250" /> <h1 class="text-3xl font-bold text-center mb-6 text-black">Welcome to Microtask</h1>
+  <img src={isDarkMode ? "/logonamindarkmode.png" : "/logonamin.png"} alt="Microtask Logo" class="absolute top-10 left-10 h-12 scale-150 md:scale-250 z-20" />
+  <h1 class={`text-3xl font-bold text-center mb-6 z-10 ${isDarkMode ? 'text-white' : 'text-black'}`} style="text-shadow: 2px 2px 8px rgba(0,0,0,0.7), -1px -1px 4px rgba(0,0,0,0.5);">Welcome to Microtask</h1>
 
   <form
     on:submit|preventDefault={handleSignup}
-    class="bg-white p-6 md:p-8 rounded-lg shadow-2xl border border-gray-300 max-w-md w-[90%] md:w-full"
+    class={`p-6 md:p-8 rounded-lg shadow-2xl border max-w-md w-[90%] md:w-full z-10 ${isDarkMode ? 'bg-zinc-800 border-zinc-600' : 'bg-white border-gray-300'}`}
   >
-    <h2 class="text-xl font-bold text-center mb-4">Sign up to continue</h2>
+    <h2 class={`text-xl font-bold text-center mb-4 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Sign up to continue</h2>
 
     {#if feedbackMessage}
       <div
@@ -289,35 +300,35 @@
     {/if}
 
     <div class="mb-4">
-      <label for="username" class="block text-gray-700 mb-1 font-medium text-sm">Username</label>
+      <label for="username" class={`block mb-1 font-medium text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>Username</label>
       <input
         id="username"
         name="username"
         type="text"
         bind:value={username}
-        class="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-sm"
+        class={`w-full px-3 py-2 border rounded-lg outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-sm ${isDarkMode ? 'bg-zinc-700 border-zinc-600 text-white placeholder-gray-400' : 'border-gray-300 bg-white'}`}
         required
         placeholder="Choose a username (letters, numbers, _)"
         aria-describedby="usernameHint"
       />
-       <p id="usernameHint" class="text-xs text-gray-500 mt-1">Only letters, numbers, and underscores allowed.</p>
+       <p id="usernameHint" class={`text-xs mt-1 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>Only letters, numbers, and underscores allowed.</p>
     </div>
 
     <div class="mb-4">
-      <label for="email" class="block text-gray-700 mb-1 font-medium text-sm">Email</label>
+      <label for="email" class={`block mb-1 font-medium text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>Email</label>
       <input
         id="email"
         name="email"
         type="email"
         bind:value={email}
-        class="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-sm"
+        class={`w-full px-3 py-2 border rounded-lg outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-sm ${isDarkMode ? 'bg-zinc-700 border-zinc-600 text-white placeholder-gray-400' : 'border-gray-300 bg-white'}`}
         required
         placeholder="your@email.com"
       />
     </div>
 
     <div class="mb-4">
-      <label for="password" class="block text-gray-700 mb-1 font-medium text-sm">Password</label>
+      <label for="password" class={`block mb-1 font-medium text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>Password</label>
       <div class="relative">
         {#if showPassword}
           <input
@@ -325,7 +336,7 @@
             name="password"
             type="text"
             bind:value={password}
-            class="w-full px-3 py-2 border {passwordError ? 'border-red-500' : 'border-gray-300'} rounded-lg outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-sm"
+            class={`w-full px-3 py-2 border rounded-lg outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-sm ${isDarkMode ? 'bg-zinc-700 border-zinc-600 text-white placeholder-gray-400' : 'bg-white'} ${passwordError ? 'border-red-500' : ''}`}
             required
             placeholder="Create a password"
             aria-describedby="passwordHint passwordErrorMsg"
@@ -336,7 +347,7 @@
             name="password"
             type="password"
             bind:value={password}
-            class="w-full px-3 py-2 border {passwordError ? 'border-red-500' : 'border-gray-300'} rounded-lg outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-sm"
+            class={`w-full px-3 py-2 border rounded-lg outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-sm ${isDarkMode ? 'bg-zinc-700 border-zinc-600 text-white placeholder-gray-400' : 'bg-white'} ${passwordError ? 'border-red-500' : ''}`}
             required
             placeholder="Create a password"
             aria-describedby="passwordHint passwordErrorMsg"
@@ -344,7 +355,7 @@
         {/if}
         <button
           type="button" aria-label={showPassword ? "Hide password" : "Show password"}
-          class="absolute right-3 top-1/2 transform -translate-y-1/2 cursor-pointer text-gray-500 hover:text-gray-700 p-1"
+          class={`absolute right-3 top-1/2 transform -translate-y-1/2 cursor-pointer p-1 ${isDarkMode ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-700'}`}
           on:click={() => togglePasswordVisibility('password')}
         >
              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
@@ -356,7 +367,7 @@
              </svg>
         </button>
       </div>
-       <p id="passwordHint" class="text-xs text-gray-500 mt-1">Min. 8 characters, with uppercase & lowercase letters.</p>
+       <p id="passwordHint" class={`text-xs mt-1 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>Min. 8 characters, with uppercase & lowercase letters.</p>
        {#if passwordError}
          <p id="passwordErrorMsg" class="text-xs text-red-600 mt-1" transition:fade>
            {passwordError}
@@ -364,7 +375,7 @@
        {/if}
     </div>
 
-    <div class="mb-6"> <label for="confirmPassword" class="block text-gray-700 mb-1 font-medium text-sm">Re-type Password</label>
+    <div class="mb-6"> <label for="confirmPassword" class={`block mb-1 font-medium text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>Re-type Password</label>
       <div class="relative">
         {#if showConfirmPassword}
           <input
@@ -372,7 +383,7 @@
             name="confirmPassword"
             type="text"
             bind:value={confirmPassword}
-            class="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-sm"
+            class={`w-full px-3 py-2 border rounded-lg outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-sm ${isDarkMode ? 'bg-zinc-700 border-zinc-600 text-white placeholder-gray-400' : 'border-gray-300 bg-white'}`}
             required
             placeholder="Confirm your password"
           />
@@ -382,14 +393,14 @@
             name="confirmPassword"
             type="password"
             bind:value={confirmPassword}
-            class="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-sm"
+            class={`w-full px-3 py-2 border rounded-lg outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-sm ${isDarkMode ? 'bg-zinc-700 border-zinc-600 text-white placeholder-gray-400' : 'border-gray-300 bg-white'}`}
             required
             placeholder="Confirm your password"
           />
         {/if}
         <button
           type="button" aria-label={showConfirmPassword ? "Hide password" : "Show password"}
-          class="absolute right-3 top-1/2 transform -translate-y-1/2 cursor-pointer text-gray-500 hover:text-gray-700 p-1"
+          class={`absolute right-3 top-1/2 transform -translate-y-1/2 cursor-pointer p-1 ${isDarkMode ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-700'}`}
           on:click={() => togglePasswordVisibility('confirmPassword')}
         >
              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
@@ -413,8 +424,8 @@
       </button>
     </div>
 
-    <div class="relative my-5"> <div class="absolute inset-0 flex items-center" aria-hidden="true"><div class="w-full border-t border-gray-300"></div></div>
-       <div class="relative flex justify-center text-sm"><span class="px-2 bg-white text-gray-500">Or</span></div>
+    <div class="relative my-5"> <div class="absolute inset-0 flex items-center" aria-hidden="true"><div class={`w-full border-t ${isDarkMode ? 'border-zinc-600' : 'border-gray-300'}`}></div></div>
+       <div class="relative flex justify-center text-sm"><span class={`px-2 ${isDarkMode ? 'bg-zinc-800 text-gray-400' : 'bg-white text-gray-500'}`}>Or</span></div>
      </div>
 
     <div class="mt-4">
@@ -422,14 +433,14 @@
         type="button"
         on:click={googleSignup}
         disabled={isLoading}
-        class="w-full border border-gray-300 flex items-center justify-center py-2.5 rounded-lg font-semibold cursor-pointer transition duration-200 transform hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-gray-400 disabled:opacity-60 disabled:cursor-not-allowed"
+        class={`w-full border flex items-center justify-center py-2.5 rounded-lg font-semibold cursor-pointer transition duration-200 transform focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-gray-400 disabled:opacity-60 disabled:cursor-not-allowed ${isDarkMode ? 'border-zinc-600 hover:bg-zinc-700' : 'border-gray-300 hover:bg-gray-50'}`}
       >
         <img src="/iconnggoogle.webp" alt="Google" class="h-5 mr-2" />
-        <span class="text-sm text-gray-700">Sign up with Google</span>
+        <span class={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>Sign up with Google</span>
       </button>
     </div>
 
-    <div class="mt-5 text-center text-sm"> <p class="text-gray-600">
+    <div class="mt-5 text-center text-sm"> <p class={isDarkMode ? 'text-gray-400' : 'text-gray-600'}>
         Already have an account?
         <a href="/login" class="text-blue-600 hover:underline font-medium">Log in</a>
       </p>

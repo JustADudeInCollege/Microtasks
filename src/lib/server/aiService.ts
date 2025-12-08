@@ -1,6 +1,6 @@
 // src/lib/server/aiService.ts
 
-import { OPENROUTER_API_KEY } from '$env/static/private';
+import { GROQ_API_KEY } from '$env/static/private';
 
 // Updated AiGeneratedTask interface
 export interface AiGeneratedTask {
@@ -16,35 +16,34 @@ export interface OriginalTemplateStep {
 // Helper function to delay execution
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-// Ensure 'export' is present
+// Groq API completion function
 export async function getOpenRouterCompletion(prompt: string, throwOnError: boolean = false): Promise<string | null> {
-  // Only try ONE model - no fallbacks to avoid burning rate limits
-  const model = 'meta-llama/llama-3.2-3b-instruct:free';
+  const model = 'llama-3.3-70b-versatile';
 
   try {
-    console.log(`DEBUG: Calling OpenRouter with model: ${model}`);
+    console.log(`DEBUG: Calling Groq with model: ${model}`);
 
-    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': 'https://microtask.app',
-        'X-Title': 'Microtask AI Assistant'
+        'Authorization': `Bearer ${GROQ_API_KEY}`,
+        'Content-Type': 'application/json'
       },
       body: JSON.stringify({
         model: model,
-        messages: [{ role: 'user', content: prompt }]
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.7,
+        max_tokens: 2048
       })
     });
 
     if (!res.ok) {
       const errorText = await res.text();
-      console.error(`OpenRouter API error: ${res.status} - ${errorText}`);
+      console.error(`Groq API error: ${res.status} - ${errorText}`);
       
       if (res.status === 429) {
         // Try to get retry time from headers
-        const retryAfter = res.headers.get('Retry-After') || res.headers.get('x-ratelimit-reset');
+        const retryAfter = res.headers.get('Retry-After') || res.headers.get('x-ratelimit-reset-requests');
         const waitTime = retryAfter ? `${retryAfter} seconds` : 'a minute';
         throw new Error(`RATE_LIMITED:${waitTime}`);
       }
@@ -62,7 +61,7 @@ export async function getOpenRouterCompletion(prompt: string, throwOnError: bool
     return null;
     
   } catch (err: any) {
-    console.error(`OpenRouter fetch error:`, err);
+    console.error(`Groq fetch error:`, err);
     if (err.message?.startsWith('RATE_LIMITED') || throwOnError) {
       throw err;
     }

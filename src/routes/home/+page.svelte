@@ -441,17 +441,25 @@
       });
       typingIndicator.remove();
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: `API request failed with status ${response.status}` }));
-        throw new Error(errorData.error || `API request failed: ${response.status}`);
+        const errorData = await response.json().catch(() => ({ error: true, reply: `API request failed with status ${response.status}` }));
+        throw new Error(errorData.reply || `API request failed: ${response.status}`);
       }
       const responseData = await response.json();
-      if (responseData.error) { throw new Error(responseData.error); }
       const aiReplyText = responseData?.reply || "Hmm, I couldn't get a response this time.";
-      let formattedReply = aiReplyText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\*(.*?)\*/g, '<em>$1</em>').replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\n/g, '<br>');
-      const aiMsgDiv = document.createElement('div');
-      aiMsgDiv.className = `p-2 rounded-lg text-sm self-start max-w-[75%] mb-2 break-words ${isDarkMode ? 'bg-zinc-700 text-zinc-200' : 'bg-gray-200 text-gray-800'}`;
-      aiMsgDiv.innerHTML = formattedReply;
-      chatMessages.appendChild(aiMsgDiv);
+      
+      // If there was an error, show the reply as an error message
+      if (responseData.error) {
+        const errorMsgDiv = document.createElement('div');
+        errorMsgDiv.className = `p-2 rounded-lg text-sm self-start max-w-[75%] mb-2 ${isDarkMode ? 'bg-amber-800 text-amber-200' : 'bg-amber-100 text-amber-700'}`;
+        errorMsgDiv.textContent = aiReplyText;
+        chatMessages.appendChild(errorMsgDiv);
+      } else {
+        let formattedReply = aiReplyText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\*(.*?)\*/g, '<em>$1</em>').replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\n/g, '<br>');
+        const aiMsgDiv = document.createElement('div');
+        aiMsgDiv.className = `p-2 rounded-lg text-sm self-start max-w-[75%] mb-2 break-words ${isDarkMode ? 'bg-zinc-700 text-zinc-200' : 'bg-gray-200 text-gray-800'}`;
+        aiMsgDiv.innerHTML = formattedReply;
+        chatMessages.appendChild(aiMsgDiv);
+      }
     } catch (error: any) {
       const errorMsgDiv = document.createElement('div');
       errorMsgDiv.className = `p-2 rounded-lg text-sm self-start max-w-[75%] mb-2 ${isDarkMode ? 'bg-red-800 text-red-200' : 'bg-red-100 text-red-700'}`;

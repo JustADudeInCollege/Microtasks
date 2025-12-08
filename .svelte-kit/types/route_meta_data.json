@@ -20,11 +20,29 @@
 	"/api/cron/send-reminders": [
 		"src/routes/api/cron/send-reminders/+server.ts"
 	],
+	"/api/notifications": [
+		"src/routes/api/notifications/+server.ts"
+	],
 	"/api/pase-task-nlp": [
 		"src/routes/api/pase-task-nlp/+server.ts"
 	],
 	"/api/v1/chat": [
 		"src/routes/api/v1/chat/+server.ts"
+	],
+	"/api/workspace/activity": [
+		"src/routes/api/workspace/activity/+server.ts"
+	],
+	"/api/workspace/assignments": [
+		"src/routes/api/workspace/assignments/+server.ts"
+	],
+	"/api/workspace/invitations": [
+		"src/routes/api/workspace/invitations/+server.ts"
+	],
+	"/api/workspace/members": [
+		"src/routes/api/workspace/members/+server.ts"
+	],
+	"/api/workspace/share-link": [
+		"src/routes/api/workspace/share-link/+server.ts"
 	],
 	"/calendar": [
 		"src/routes/calendar/+page.server.ts",
@@ -40,6 +58,10 @@
 	],
 	"/home": [
 		"src/routes/home/+page.server.ts",
+		"src/routes/+layout.ts"
+	],
+	"/join/[token]": [
+		"src/routes/join/[token]/+page.server.ts",
 		"src/routes/+layout.ts"
 	],
 	"/kanban": [

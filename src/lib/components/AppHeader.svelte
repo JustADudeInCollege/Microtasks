@@ -1,10 +1,12 @@
 <script lang="ts">
   import { createEventDispatcher, onMount, onDestroy } from 'svelte';
   import { browser } from '$app/environment';
-  import { goto } from '$app/navigation';
+  import { goto, invalidateAll } from '$app/navigation';
   import { auth, db } from '$lib/firebase.js';
   import { onAuthStateChanged } from 'firebase/auth';
   import { doc, getDoc } from 'firebase/firestore';
+  import type { InvitationForFrontend, UserNotificationForFrontend } from '$lib/types/collaboration';
+  import { getRoleDisplayName } from '$lib/types/collaboration';
 
   export let isDarkMode: boolean = false;
   export let username: string = 'User';
@@ -18,7 +20,17 @@
   let showHelpDropdown = false;
   let showProfileDropdown = false;
 
+  // Pending invitations state
+  let pendingInvitations: InvitationForFrontend[] = [];
+  let isLoadingInvitations = false;
+  let invitationActionLoading: string | null = null;
+
+  // User notifications state
+  let userNotifications: UserNotificationForFrontend[] = [];
+  let isLoadingNotifications = false;
+
   let dateTimeInterval: ReturnType<typeof setInterval> | null = null;
+  let notificationAudio: HTMLAudioElement | null = null;
 
   function updateDateTime() {
     const now = new Date();
@@ -47,6 +59,155 @@
     showNotifDropdown = !showNotifDropdown;
     showHelpDropdown = false;
     showProfileDropdown = false;
+    
+    // Load invitations and notifications when opening dropdown
+    if (showNotifDropdown) {
+      loadPendingInvitations();
+      loadUserNotifications();
+    }
+  }
+
+  function playNotificationSound() {
+    if (browser) {
+      try {
+        notificationAudio = new Audio('/mambou.mp3');
+        notificationAudio.volume = 0.5;
+        notificationAudio.play().catch(err => {
+          // Autoplay might be blocked by browser
+          console.log('Could not autoplay notification sound:', err);
+        });
+      } catch (err) {
+        console.error('Failed to play notification sound:', err);
+      }
+    }
+  }
+
+  async function loadPendingInvitations(isInitialLoad = false) {
+    // Only show loading indicator on initial load, not during polling
+    if (isInitialLoad) {
+      isLoadingInvitations = true;
+    }
+    try {
+      const res = await fetch('/api/workspace/invitations?mine=true');
+      if (res.ok) {
+        const data = await res.json();
+        const newInvitations = data.invitations || [];
+        
+        // Play sound if there are invitations on initial load or new ones added
+        if (newInvitations.length > 0 && (isInitialLoad || newInvitations.length > pendingInvitations.length)) {
+          playNotificationSound();
+        }
+        
+        pendingInvitations = newInvitations;
+      }
+    } catch (err) {
+      console.error('Failed to load invitations:', err);
+    } finally {
+      isLoadingInvitations = false;
+    }
+  }
+
+  async function loadUserNotifications(isInitialLoad = false) {
+    if (isInitialLoad) {
+      isLoadingNotifications = true;
+    }
+    try {
+      // Include read notifications so they stay visible
+      const res = await fetch('/api/notifications?includeRead=true');
+      if (res.ok) {
+        const data = await res.json();
+        const newNotifications = data.notifications || [];
+        
+        // Only play sound if there are MORE unread notifications than before (not on initial load)
+        const unreadCount = newNotifications.filter((n: any) => !n.isRead).length;
+        const prevUnreadCount = userNotifications.filter(n => !n.isRead).length;
+        if (!isInitialLoad && unreadCount > prevUnreadCount) {
+          playNotificationSound();
+        }
+        
+        userNotifications = newNotifications;
+      }
+    } catch (err) {
+      console.error('Failed to load notifications:', err);
+    } finally {
+      isLoadingNotifications = false;
+    }
+  }
+
+  async function markNotificationRead(notificationId: string) {
+    try {
+      const res = await fetch('/api/notifications', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notificationId })
+      });
+      if (res.ok) {
+        // Mark as read locally instead of removing
+        userNotifications = userNotifications.map(n => 
+          n.id === notificationId ? { ...n, isRead: true } : n
+        );
+      }
+    } catch (err) {
+      console.error('Failed to mark notification as read:', err);
+    }
+  }
+
+  async function markAllNotificationsRead() {
+    try {
+      const res = await fetch('/api/notifications', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ markAll: true })
+      });
+      if (res.ok) {
+        // Mark all as read locally instead of removing
+        userNotifications = userNotifications.map(n => ({ ...n, isRead: true }));
+        console.log('All notifications marked as read');
+      } else {
+        console.error('Failed to mark all notifications as read:', await res.text());
+      }
+    } catch (err) {
+      console.error('Failed to mark all notifications as read:', err);
+    }
+  }
+
+  async function dismissNotification(notificationId: string) {
+    try {
+      const res = await fetch('/api/notifications', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notificationId })
+      });
+      if (res.ok) {
+        userNotifications = userNotifications.filter(n => n.id !== notificationId);
+      }
+    } catch (err) {
+      console.error('Failed to dismiss notification:', err);
+    }
+  }
+
+  async function handleInvitation(invitationId: string, action: 'accept' | 'decline') {
+    invitationActionLoading = invitationId;
+    try {
+      const res = await fetch('/api/workspace/invitations', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ invitationId, action })
+      });
+
+      if (res.ok) {
+        pendingInvitations = pendingInvitations.filter(i => i.id !== invitationId);
+        if (action === 'accept') {
+          // Refresh data and navigate to workspace list
+          await invalidateAll();
+          goto('/workspace');
+        }
+      }
+    } catch (err) {
+      console.error('Failed to handle invitation:', err);
+    } finally {
+      invitationActionLoading = null;
+    }
   }
 
   function toggleHelpDropdown(e: MouseEvent) {
@@ -94,12 +255,29 @@
     }
   }
 
+  let invitationPollInterval: ReturnType<typeof setInterval> | null = null;
+  let notificationPollInterval: ReturnType<typeof setInterval> | null = null;
+
   onMount(() => {
     if (browser) {
       updateDateTime();
       dateTimeInterval = setInterval(updateDateTime, 60000);
 
-      // Fetch profile picture from Firestore
+      // Load pending invitations and notifications for notification badge (with sound on initial load)
+      loadPendingInvitations(true);
+      loadUserNotifications(true);
+
+      // Poll for new invitations every 3 seconds
+      invitationPollInterval = setInterval(() => {
+        loadPendingInvitations(false);
+      }, 3000);
+
+      // Poll for new notifications every 5 seconds
+      notificationPollInterval = setInterval(() => {
+        loadUserNotifications(false);
+      }, 5000);
+
+      // Fetch profile picture from Firestore or Firebase Auth (Google)
       const unsubscribe = onAuthStateChanged(auth, async (user) => {
         if (user) {
           try {
@@ -107,15 +285,24 @@
             const credSnap = await getDoc(credRef);
             if (credSnap.exists() && credSnap.data().photoBase64) {
               profilePicture = credSnap.data().photoBase64;
+            } else if (user.photoURL) {
+              // Fallback to Google profile picture from Firebase Auth
+              profilePicture = user.photoURL;
             }
           } catch (error) {
             console.error("Error fetching profile picture:", error);
+            // Still try to use Google photo if Firestore fails
+            if (user.photoURL) {
+              profilePicture = user.photoURL;
+            }
           }
         }
       });
 
       return () => {
         if (dateTimeInterval) clearInterval(dateTimeInterval);
+        if (invitationPollInterval) clearInterval(invitationPollInterval);
+        if (notificationPollInterval) clearInterval(notificationPollInterval);
         unsubscribe();
       };
     }
@@ -123,6 +310,8 @@
 
   onDestroy(() => {
     if (dateTimeInterval) clearInterval(dateTimeInterval);
+    if (invitationPollInterval) clearInterval(invitationPollInterval);
+    if (notificationPollInterval) clearInterval(notificationPollInterval);
   });
 </script>
 
@@ -155,11 +344,104 @@
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5" aria-hidden="true">
           <path fill-rule="evenodd" d="M5.25 9a6.75 6.75 0 0113.5 0v.75c0 2.123.8 4.057 2.118 5.52a.75.75 0 01-.297 1.206c-1.544.57-3.16.99-4.831 1.243a3.75 3.75 0 11-7.48 0c-1.673-.253-3.287-.673-4.831-1.243a.75.75 0 01-.297-1.206C4.45 13.807 5.25 11.873 5.25 9.75V9zm4.502 8.9a2.25 2.25 0 104.496 0H9.752z" clip-rule="evenodd" />
         </svg>
+        {#if pendingInvitations.length + userNotifications.filter(n => !n.isRead).length > 0}
+          <span class="notif-badge">{pendingInvitations.length + userNotifications.filter(n => !n.isRead).length}</span>
+        {/if}
       </button>
       {#if showNotifDropdown}
-      <div class={`dropdown-window w-80 max-h-96 overflow-y-auto custom-scrollbar ${isDarkMode ? 'bg-zinc-700 border-zinc-600 text-zinc-300' : 'bg-white border-gray-200 text-gray-700'}`}>
-        <h3 class="font-semibold mb-2 text-sm">Notifications</h3>
-        <p class="text-xs text-center py-4">No new notifications.</p>
+      <div class={`dropdown-window w-96 max-h-96 overflow-y-auto custom-scrollbar ${isDarkMode ? 'bg-zinc-700 border-zinc-600 text-zinc-300' : 'bg-white border-gray-200 text-gray-700'}`}>
+        <div class="mb-3">
+          <h3 class="font-semibold text-sm">Notifications</h3>
+          {#if userNotifications.some(n => !n.isRead)}
+            <button 
+              class="text-xs text-blue-500 hover:text-blue-600 hover:underline cursor-pointer mt-1"
+              on:click|stopPropagation={markAllNotificationsRead}
+            >
+              Mark all as read
+            </button>
+          {/if}
+        </div>
+        
+        {#if isLoadingInvitations && isLoadingNotifications}
+          <p class="text-xs text-center py-4">Loading...</p>
+        {:else if pendingInvitations.length === 0 && userNotifications.length === 0}
+          <p class="text-xs text-center py-4 opacity-70">No new notifications.</p>
+        {:else}
+          <div class="space-y-3">
+            <!-- Task Assignment Notifications -->
+            {#each userNotifications as notification (notification.id)}
+              <div class={`notification-card p-3 rounded-lg transition-opacity ${notification.isRead ? 'opacity-50' : ''} ${isDarkMode ? (notification.isRead ? 'bg-zinc-700' : 'bg-zinc-600') : (notification.isRead ? 'bg-gray-100' : 'bg-blue-50')}`}>
+                <div class="flex justify-between items-start">
+                  <div class="flex-1">
+                    <p class={`text-sm ${notification.isRead ? 'font-normal' : 'font-medium'}`}>{notification.title}</p>
+                    <p class="text-xs mt-1 opacity-80">{notification.message}</p>
+                    {#if notification.workspaceName}
+                      <p class="text-xs mt-1 opacity-60">in {notification.workspaceName}</p>
+                    {/if}
+                    <p class="text-xs mt-1 opacity-50">{notification.timeAgo}</p>
+                  </div>
+                  <button 
+                    class="text-xs opacity-60 hover:opacity-100 ml-2"
+                    on:click|stopPropagation={() => notification.isRead ? dismissNotification(notification.id) : markNotificationRead(notification.id)}
+                    title={notification.isRead ? 'Dismiss' : 'Mark as read'}
+                  >
+                    ✕
+                  </button>
+                </div>
+                {#if notification.taskId && notification.workspaceId}
+                  <button 
+                    class="mt-2 text-xs text-blue-500 hover:text-blue-600"
+                    on:click|stopPropagation={() => { goto(`/workspace/${notification.workspaceId}`); showNotifDropdown = false; }}
+                  >
+                    View Task →
+                  </button>
+                {/if}
+              </div>
+            {/each}
+
+            <!-- Workspace Invitations -->
+            {#each pendingInvitations as invitation (invitation.id)}
+              <div class={`invitation-card p-3 rounded-lg ${isDarkMode ? 'bg-zinc-600' : 'bg-gray-50'}`}>
+                <div class="flex items-start gap-2 mb-2">
+                  <div class="invitation-icon flex-shrink-0">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-blue-500">
+                      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                      <circle cx="9" cy="7" r="4"></circle>
+                      <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                      <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                    </svg>
+                  </div>
+                  <div class="flex-1 min-w-0">
+                    <p class="text-xs font-medium truncate">Workspace Invitation</p>
+                    <p class="text-xs mt-1">
+                      <strong>{invitation.invitedByUsername}</strong> invited you to join 
+                      <strong class="text-blue-500">{invitation.workspaceName}</strong>
+                    </p>
+                    <p class="text-xs mt-1 opacity-70">
+                      Role: <span class="capitalize">{getRoleDisplayName(invitation.role)}</span>
+                    </p>
+                  </div>
+                </div>
+                <div class="flex gap-2 mt-2">
+                  <button 
+                    class="invitation-btn accept-btn flex-1 text-xs py-1.5 px-3 rounded font-medium"
+                    disabled={invitationActionLoading === invitation.id}
+                    on:click={() => handleInvitation(invitation.id, 'accept')}
+                  >
+                    {invitationActionLoading === invitation.id ? '...' : 'Accept'}
+                  </button>
+                  <button 
+                    class="invitation-btn decline-btn flex-1 text-xs py-1.5 px-3 rounded font-medium"
+                    disabled={invitationActionLoading === invitation.id}
+                    on:click={() => handleInvitation(invitation.id, 'decline')}
+                  >
+                    Decline
+                  </button>
+                </div>
+              </div>
+            {/each}
+          </div>
+        {/if}
       </div>
       {/if}
     </div>
@@ -187,10 +469,8 @@
         {#if profilePicture}
           <img src={profilePicture} alt="Profile" class="w-full h-full rounded-full object-cover" />
         {:else}
-          <div class="w-full h-full rounded-full bg-gray-200 dark:bg-zinc-600 flex items-center justify-center">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-7 h-7 text-gray-500 dark:text-zinc-400" aria-hidden="true">
-              <path fill-rule="evenodd" d="M18.685 19.097A9.723 9.723 0 0021.75 12c0-5.385-4.365-9.75-9.75-9.75S2.25 6.615 2.25 12a9.723 9.723 0 003.065 7.097A9.716 9.716 0 0012 21.75a9.716 9.716 0 006.685-2.653zm-12.54-1.285A7.486 7.486 0 0112 15a7.486 7.486 0 015.855 2.812A8.224 8.224 0 0112 20.25a8.224 8.224 0 01-5.855-2.438zM15.75 9a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z" clip-rule="evenodd" />
-            </svg>
+          <div class="w-full h-full rounded-full bg-blue-500 flex items-center justify-center">
+            <span class="text-white text-xl font-semibold">{username ? username.charAt(0).toUpperCase() : 'U'}</span>
           </div>
         {/if}
       </button>
@@ -201,10 +481,8 @@
           {#if profilePicture}
             <img src={profilePicture} alt="Profile" class="w-16 h-16 rounded-full object-cover mb-2" />
           {:else}
-            <div class="w-16 h-16 rounded-full bg-gray-200 dark:bg-zinc-600 flex items-center justify-center mb-2">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-10 h-10 text-gray-400 dark:text-zinc-500" aria-hidden="true">
-                <path fill-rule="evenodd" d="M18.685 19.097A9.723 9.723 0 0021.75 12c0-5.385-4.365-9.75-9.75-9.75S2.25 6.615 2.25 12a9.723 9.723 0 003.065 7.097A9.716 9.716 0 0012 21.75a9.716 9.716 0 006.685-2.653zm-12.54-1.285A7.486 7.486 0 0112 15a7.486 7.486 0 015.855 2.812A8.224 8.224 0 0112 20.25a8.224 8.224 0 01-5.855-2.438zM15.75 9a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z" clip-rule="evenodd" />
-              </svg>
+            <div class="w-16 h-16 rounded-full bg-blue-500 flex items-center justify-center mb-2">
+              <span class="text-white text-2xl font-semibold">{username ? username.charAt(0).toUpperCase() : 'U'}</span>
             </div>
           {/if}
           <p class="font-semibold text-sm">{username || 'User'}</p>
@@ -355,7 +633,7 @@
     border-radius: 0.5rem;
     box-shadow: 0 4px 12px rgba(0,0,0,0.1);
     padding: 0.75rem;
-    width: 260px;
+    min-width: 320px;
     z-index: 50;
     opacity: 0;
     transform: translateY(-5px) scale(0.98);
@@ -382,5 +660,134 @@
 
   :global(.dark) .custom-scrollbar {
     scrollbar-color: #4a5568 #2d3748;
+  }
+
+  /* Notification badge */
+  .notif-badge {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    background-color: #ef4444;
+    color: white;
+    font-size: 0.65rem;
+    font-weight: 600;
+    min-width: 16px;
+    height: 16px;
+    border-radius: 9999px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 4px;
+  }
+
+  /* Invitation card styles */
+  .invitation-card {
+    border: 1px solid rgba(0, 0, 0, 0.05);
+  }
+
+  :global(body.dark) .invitation-card {
+    border-color: rgba(255, 255, 255, 0.05);
+  }
+
+  .invitation-btn {
+    cursor: pointer;
+    transition: all 0.15s ease;
+    font-weight: 500;
+  }
+
+  .invitation-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .accept-btn {
+    background-color: #22c55e !important;
+    color: white !important;
+    border: none !important;
+  }
+
+  .accept-btn:hover:not(:disabled) {
+    background-color: #16a34a !important;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(34, 197, 94, 0.3);
+  }
+
+  .decline-btn {
+    background-color: #fee2e2 !important;
+    color: #dc2626 !important;
+    border: 1px solid #fecaca !important;
+  }
+
+  .decline-btn:hover:not(:disabled) {
+    background-color: #fecaca !important;
+    color: #b91c1c !important;
+    transform: translateY(-1px);
+  }
+
+  :global(body.dark) .decline-btn {
+    background-color: rgba(239, 68, 68, 0.15) !important;
+    color: #f87171 !important;
+    border-color: rgba(239, 68, 68, 0.3) !important;
+  }
+
+  :global(body.dark) .decline-btn:hover:not(:disabled) {
+    background-color: rgba(239, 68, 68, 0.25) !important;
+    color: #fca5a5 !important;
+  }
+
+  /* Notification card styles */
+  .notification-card {
+    border: 1px solid rgba(59, 130, 246, 0.2);
+    background-color: rgba(59, 130, 246, 0.05);
+  }
+
+  :global(body.dark) .notification-card {
+    border-color: rgba(59, 130, 246, 0.3);
+    background-color: rgba(59, 130, 246, 0.1);
+  }
+
+  .notification-card.read {
+    border-color: rgba(0, 0, 0, 0.05);
+    background-color: transparent;
+    opacity: 0.7;
+  }
+
+  :global(body.dark) .notification-card.read {
+    border-color: rgba(255, 255, 255, 0.05);
+  }
+
+  .view-task-btn {
+    background-color: #3b82f6 !important;
+    color: white !important;
+    border: none !important;
+  }
+
+  .view-task-btn:hover {
+    background-color: #2563eb !important;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.3);
+  }
+
+  .dismiss-btn {
+    background-color: #f3f4f6 !important;
+    color: #6b7280 !important;
+    border: 1px solid #e5e7eb !important;
+  }
+
+  .dismiss-btn:hover {
+    background-color: #e5e7eb !important;
+    color: #4b5563 !important;
+    transform: translateY(-1px);
+  }
+
+  :global(body.dark) .dismiss-btn {
+    background-color: rgba(255, 255, 255, 0.1) !important;
+    color: #9ca3af !important;
+    border-color: rgba(255, 255, 255, 0.1) !important;
+  }
+
+  :global(body.dark) .dismiss-btn:hover {
+    background-color: rgba(255, 255, 255, 0.15) !important;
+    color: #d1d5db !important;
   }
 </style>

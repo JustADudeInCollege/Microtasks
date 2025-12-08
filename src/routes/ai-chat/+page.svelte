@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, tick } from 'svelte';
   import { page } from '$app/stores'; // For active link highlighting
   import { goto } from '$app/navigation'; // For logout
   import { browser } from '$app/environment';
@@ -13,6 +13,22 @@
   let currentDateTime = "";
   let dateTimeInterval: ReturnType<typeof setInterval> | null = null;
   $: currentPath = $page.url.pathname;
+
+  // Chat state
+  let chatInput = '';
+  let isTyping = false;
+  let showInitialPlaceholder = true;
+  let chatMessagesContainer: HTMLDivElement;
+  
+  interface ChatMessage {
+    id: number;
+    text: string;
+    isUser: boolean;
+    isError: boolean;
+  }
+  
+  let messages: ChatMessage[] = [];
+  let messageIdCounter = 0;
 
   // --- Helper to get username ---
   function getStoredUsername(): string {
@@ -55,7 +71,83 @@
     }
   }
 
+  // --- Chat functionality ---
+  async function sendMessage() {
+    if (!browser || !chatInput.trim() || isTyping) return;
 
+    const userMsgText = chatInput.trim();
+    chatInput = '';
+    showInitialPlaceholder = false;
+
+    // Add user message
+    messages = [...messages, {
+      id: messageIdCounter++,
+      text: userMsgText,
+      isUser: true,
+      isError: false
+    }];
+
+    await tick();
+    scrollToBottom();
+
+    isTyping = true;
+
+    const aiContextPreamble = `You are Synthia, a helpful AI assistant integrated into the Microtask productivity app. Keep your answers concise and relevant to task management, scheduling, note-taking, and general productivity. The user's name is ${username || 'User'}. Today's date is ${new Date().toLocaleDateString()}. \n\nUser query: `;
+    const fullMessageToSend = aiContextPreamble + userMsgText;
+
+    try {
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: fullMessageToSend })
+      });
+
+      const responseData = await response.json();
+      const aiReply = responseData?.reply || "Hmm, I couldn't get a response this time.";
+      const hasError = responseData?.error === true;
+
+      // Format the reply
+      let formattedText = aiReply
+        .replace(/(?<!\*)\*(?!\*)/g, '')
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.*?)\*/g, '<em>$1</em>')
+        .replace(/`([^`]+)`/g, '<code>$1</code>')
+        .replace(/\n/g, '<br>');
+
+      messages = [...messages, {
+        id: messageIdCounter++,
+        text: formattedText,
+        isUser: false,
+        isError: hasError
+      }];
+
+    } catch (error) {
+      console.error("[AI Chat Page] Chat API error:", error);
+      messages = [...messages, {
+        id: messageIdCounter++,
+        text: "Oops! Something went wrong fetching the response.",
+        isUser: false,
+        isError: true
+      }];
+    } finally {
+      isTyping = false;
+      await tick();
+      scrollToBottom();
+    }
+  }
+
+  function scrollToBottom() {
+    if (chatMessagesContainer) {
+      chatMessagesContainer.scrollTop = chatMessagesContainer.scrollHeight;
+    }
+  }
+
+  function handleKeypress(event: KeyboardEvent) {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      sendMessage();
+    }
+  }
 
   // --- Lifecycle ---
   let globalClickListener: ((event: MouseEvent) => void) | null = null;
@@ -97,107 +189,9 @@
     escKeyListener = (event: KeyboardEvent) => {
         if (event.key === 'Escape') {
             if (isSidebarOpen) closeSidebar();
-            // Potentially close other modals if this page had them
         }
     };
     document.addEventListener('keydown', escKeyListener);
-
-    // --- Chat functionality ---
-    const sendBtn = document.getElementById('sendChat');
-    const chatInput = document.getElementById('chatInput') as HTMLInputElement | null;
-    const chatMessages = document.getElementById('chatMessages');
-    const initialPlaceholder = document.getElementById('initialPlaceholder');
-
-    if (sendBtn && chatInput && chatMessages) {
-      const handleSendMessage = async () => {
-          if (!browser) return;
-
-          const userMsgText = chatInput.value.trim();
-          if (!userMsgText) return;
-
-          const aiContextPreamble = `You are Synthia, a helpful AI assistant integrated into the Microtask productivity app. Keep your answers concise and relevant to task management, scheduling, note-taking, and general productivity. The user's name is ${username || 'User'}. Today's date is ${new Date().toLocaleDateString()}. \n\nUser query: `;
-          const fullMessageToSend = aiContextPreamble + userMsgText;
-          // console.log("[AI Chat Page] Sending to API:", fullMessageToSend);
-
-          const userMsgElement = document.createElement('div');
-          userMsgElement.className = `p-3 rounded-lg shadow-sm self-end w-max max-w-[85%] ml-auto mb-3 break-words ${isDarkMode ? 'bg-blue-700 text-blue-100' : 'bg-blue-500 text-white'}`;
-          userMsgElement.textContent = userMsgText;
-
-          if (initialPlaceholder && !initialPlaceholder.classList.contains('hidden')) {
-              initialPlaceholder.classList.add('hidden');
-          }
-
-          chatMessages.appendChild(userMsgElement);
-          chatInput.value = "";
-          chatMessages.scrollTop = chatMessages.scrollHeight;
-
-          const typingMsg = document.createElement('div');
-          typingMsg.id = 'aiTyping';
-          typingMsg.className = `text-sm self-start italic px-3 py-2 rounded-lg shadow-sm w-max max-w-[85%] mb-3 ${isDarkMode ? 'bg-zinc-700 text-zinc-400' : 'bg-gray-200 text-gray-600'}`;
-          typingMsg.textContent = 'Synthia is typing...';
-          chatMessages.appendChild(typingMsg);
-          chatMessages.scrollTop = chatMessages.scrollHeight;
-
-          try {
-            const response = await fetch("/api/chat", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ message: fullMessageToSend })
-            });
-
-            typingMsg.remove();
-
-            const responseData = await response.json();
-            const aiReply = responseData?.reply;
-            const isError = responseData?.error;
-            const finalText = aiReply || "Hmm, I couldn't get a response this time.";
-
-            let formattedText = finalText
-              .replace(/(?<!\*)\*(?!\*)/g, '')
-              .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-              .replace(/\*(.*?)\*/g, '<em>$1</em>')
-              .replace(/`([^`]+)`/g, '<code>$1</code>')
-              .replace(/\n/g, '<br>');
-
-            const aiMsgElement = document.createElement('div');
-            // Use different styling if there was an error
-            if (isError) {
-              aiMsgElement.className = `p-3 rounded-lg shadow-sm self-start w-max max-w-[85%] mb-3 break-words ${isDarkMode ? 'bg-amber-900 text-amber-200' : 'bg-amber-100 text-amber-800'}`;
-            } else {
-              aiMsgElement.className = `p-3 rounded-lg shadow-sm self-start w-max max-w-[85%] mb-3 break-words ${isDarkMode ? 'bg-zinc-700 text-zinc-200' : 'bg-white text-gray-800'}`;
-            }
-            aiMsgElement.innerHTML = formattedText;
-
-            chatMessages.appendChild(aiMsgElement);
-            chatMessages.scrollTop = chatMessages.scrollHeight;
-
-          } catch (error) {
-            console.error("[AI Chat Page] Chat API error:", error);
-            const existingTypingMsg = document.getElementById('aiTyping');
-             if (existingTypingMsg) {
-                existingTypingMsg.textContent = "Oops! Something went wrong fetching the response.";
-                existingTypingMsg.classList.remove('italic','bg-gray-200','text-gray-600','dark:bg-zinc-700','dark:text-zinc-400');
-                existingTypingMsg.classList.add('font-medium', isDarkMode ? 'text-red-400 bg-red-900' : 'text-red-600 bg-red-100');
-             } else {
-                 const errorMsgEl = document.createElement('div');
-                 errorMsgEl.className = `font-medium text-sm self-start p-3 rounded-lg shadow-sm mb-3 ${isDarkMode ? 'text-red-400 bg-red-900' : 'text-red-600 bg-red-100'}`;
-                 errorMsgEl.textContent = "Oops! Something went wrong fetching the response.";
-                 chatMessages.appendChild(errorMsgEl);
-             }
-            chatMessages.scrollTop = chatMessages.scrollHeight;
-          }
-      };
-
-      sendBtn.addEventListener('click', handleSendMessage);
-      chatInput.addEventListener('keypress', (event) => {
-        if (event.key === 'Enter' && !event.shiftKey) {
-          event.preventDefault();
-          handleSendMessage();
-        }
-      });
-    } else {
-        console.error("[AI Chat Page] Chat UI elements not found!");
-    }
 
     return () => {
         if (dateTimeInterval) clearInterval(dateTimeInterval);
@@ -298,9 +292,9 @@
     <!-- Main Content Area for AI Chat -->
     <div class="flex-1 flex flex-col overflow-y-auto pt-[60px]"> 
       
-
-        <div id="chatMessages" class="flex-1 flex flex-col space-y-3 p-4 sm:p-6 overflow-y-auto max-w-3xl w-full mx-auto custom-scrollbar">
-            <div id="initialPlaceholder" class="flex-1 flex flex-col justify-center items-center text-center text-gray-500 dark:text-zinc-400">
+        <div bind:this={chatMessagesContainer} class="flex-1 flex flex-col space-y-3 p-4 sm:p-6 overflow-y-auto max-w-3xl w-full mx-auto custom-scrollbar">
+            {#if showInitialPlaceholder && messages.length === 0}
+            <div class="flex-1 flex flex-col justify-center items-center text-center text-gray-500 dark:text-zinc-400">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-20 h-20 mb-4 opacity-30" aria-hidden="true">
                     <path d="M12.001 2.504a2.34 2.34 0 00-2.335 2.335v.583c0 .582.212 1.13.582 1.556l.03.035-.03.034a2.34 2.34 0 00-2.917 3.916A3.287 3.287 0 004.08 14.25a3.287 3.287 0 003.287 3.287h8.266a3.287 3.287 0 003.287-3.287 3.287 3.287 0 00-1.253-2.583 2.34 2.34 0 00-2.917-3.916l-.03-.034.03-.035c.37-.425.582-.973.582-1.555v-.583a2.34 2.34 0 00-2.335-2.336h-.002zM9.75 12.75a.75.75 0 000 1.5h4.5a.75.75 0 000-1.5h-4.5z" />
                     <path fill-rule="evenodd" d="M12 1.5c5.79 0 10.5 4.71 10.5 10.5S17.79 22.5 12 22.5 1.5 17.79 1.5 12 6.21 1.5 12 1.5zM2.85 12a9.15 9.15 0 019.15-9.15 9.15 9.15 0 019.15 9.15 9.15 9.15 0 01-9.15 9.15A9.15 9.15 0 012.85 12z" clip-rule="evenodd" />
@@ -308,19 +302,47 @@
                 <p class="text-xl font-medium">Ask Synthia Anything!</p>
                 <p class="text-sm">Your personal AI assistant for Microtask.</p>
             </div>
-            <!-- Chat messages will be appended here -->
+            {/if}
+            
+            {#each messages as message (message.id)}
+                {#if message.isUser}
+                    <div class={`p-3 rounded-lg shadow-sm self-end w-max max-w-[85%] ml-auto mb-3 break-words ${isDarkMode ? 'bg-blue-700 text-blue-100' : 'bg-blue-500 text-white'}`}>
+                        {message.text}
+                    </div>
+                {:else}
+                    <div class={`p-3 rounded-lg shadow-sm self-start w-max max-w-[85%] mb-3 break-words ${
+                        message.isError 
+                            ? (isDarkMode ? 'bg-amber-900 text-amber-200' : 'bg-amber-100 text-amber-800')
+                            : (isDarkMode ? 'bg-zinc-700 text-zinc-200' : 'bg-white text-gray-800')
+                    }`}>
+                        {@html message.text}
+                    </div>
+                {/if}
+            {/each}
+            
+            {#if isTyping}
+                <div class={`text-sm self-start italic px-3 py-2 rounded-lg shadow-sm w-max max-w-[85%] mb-3 ${isDarkMode ? 'bg-zinc-700 text-zinc-400' : 'bg-gray-200 text-gray-600'}`}>
+                    Synthia is typing...
+                </div>
+            {/if}
         </div>
 
         <div class={`p-4 border-t flex-shrink-0 ${isDarkMode ? 'bg-zinc-800 border-zinc-700' : 'bg-white border-gray-200'}`}>
             <div class="relative max-w-3xl mx-auto">
-                <input id="chatInput" type="text" placeholder="Send a message to Synthia..."
-                       class={`w-full border rounded-lg px-4 py-3 text-base focus:outline-none focus:ring-2 shadow-sm pr-12
-                              ${isDarkMode ? 'bg-zinc-700 border-zinc-600 text-zinc-100 placeholder-zinc-400 focus:ring-blue-500 focus:border-blue-500'
-                                          : 'border-gray-300 text-gray-800 placeholder-gray-400 focus:ring-blue-500 focus:border-blue-500'}`} />
-                <button id="sendChat" aria-label="Send Message"
-                        class={`absolute right-2 top-1/2 transform -translate-y-1/2 p-2 rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2
-                               ${isDarkMode ? 'text-zinc-400 hover:text-blue-400 focus:ring-blue-500 focus:ring-offset-zinc-800'
-                                           : 'text-gray-500 hover:text-blue-600 focus:ring-blue-500 focus:ring-offset-white'}`}>
+                <input 
+                    type="text" 
+                    placeholder="Send a message to Synthia..."
+                    bind:value={chatInput}
+                    on:keypress={handleKeypress}
+                    class={`w-full border rounded-lg px-4 py-3 text-base focus:outline-none focus:ring-2 shadow-sm pr-12
+                           ${isDarkMode ? 'bg-zinc-700 border-zinc-600 text-zinc-100 placeholder-zinc-400 focus:ring-blue-500 focus:border-blue-500'
+                                       : 'border-gray-300 text-gray-800 placeholder-gray-400 focus:ring-blue-500 focus:border-blue-500'}`} />
+                <button 
+                    on:click={sendMessage}
+                    aria-label="Send Message"
+                    class={`absolute right-2 top-1/2 transform -translate-y-1/2 p-2 rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2
+                           ${isDarkMode ? 'text-zinc-400 hover:text-blue-400 focus:ring-blue-500 focus:ring-offset-zinc-800'
+                                       : 'text-gray-500 hover:text-blue-600 focus:ring-blue-500 focus:ring-offset-white'}`}>
                     <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 16 16" class="w-5 h-5">
                         <path d="M15.854.146a.5.5 0 0 1 .11.54l-5.819 14.547a.75.75 0 0 1-1.329.124l-3.178-4.995L.643 7.184a.75.75 0 0 1 .124-1.33L15.314.037a.5.5 0 0 1 .54.11ZM6.636 10.07l2.761 4.338L14.13 2.576zm6.787-8.201L1.591 6.602l4.339 2.76z"/>
                     </svg>

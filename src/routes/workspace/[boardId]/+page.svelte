@@ -10,12 +10,102 @@
     import TaskDetailModal from '$lib/components/TaskDetailModal.svelte';
     import LoadingIndicator from '$lib/components/LoadingIndicator.svelte';
     import AppHeader from '$lib/components/AppHeader.svelte';
+    import ShareModal from '$lib/components/ShareModal.svelte';
+    import MemberList from '$lib/components/MemberList.svelte';
     import type { TaskForFrontend } from '$lib/types/task';
+    import type { WorkspaceMemberForFrontend, MemberRole, TaskAssignment } from '$lib/types/collaboration';
 
     export let data: import('./$types').PageData;
 
     let isLoadingOperation = false; // New state for loading indicator
+    let isPageReady = false; // Page-level loading state - wait until all data is loaded
     let kanbanScrollContainer: HTMLElement; // Declare variable for scroll container
+
+    // --- COLLABORATION STATE ---
+    let isShareModalOpen = false;
+    let workspaceMembers: WorkspaceMemberForFrontend[] = [];
+    let taskAssignmentsMap: Record<string, TaskAssignment[]> = {}; // Object of taskId -> assignments (better Svelte reactivity)
+    $: userRole = (data.currentWorkspace?.userRole || 'viewer') as MemberRole;
+    $: isCollaborative = data.currentWorkspace?.isCollaborative ?? false;
+    $: workspaceName = data.currentWorkspace?.name || 'Workspace';
+    $: workspaceId = data.selectedBoardId || '';
+
+    // Debug: log assignments map changes
+    $: console.log('[Board Page] taskAssignmentsMap updated:', Object.keys(taskAssignmentsMap).length, 'tasks with assignments');
+    
+    // Force reactivity: create a reactive key that changes when assignments change
+    $: assignmentsVersion = Object.keys(taskAssignmentsMap).length + JSON.stringify(Object.keys(taskAssignmentsMap));
+
+    // Debug: log the userRole
+    $: console.log('[Board Page] currentWorkspace:', data.currentWorkspace, 'userRole:', userRole);
+
+    async function loadWorkspaceMembers() {
+        if (!workspaceId) {
+            console.log('[loadWorkspaceMembers] No workspaceId, skipping');
+            return;
+        }
+        try {
+            console.log('[loadWorkspaceMembers] Fetching members for workspace:', workspaceId);
+            const res = await fetch(`/api/workspace/members?workspaceId=${workspaceId}`);
+            if (res.ok) {
+                const data = await res.json();
+                workspaceMembers = data.members;
+                console.log('[loadWorkspaceMembers] Got members:', workspaceMembers);
+            } else {
+                console.error('[loadWorkspaceMembers] Response not ok:', res.status);
+            }
+        } catch (err) {
+            console.error('Failed to load workspace members:', err);
+        }
+    }
+
+    async function loadAllTaskAssignments() {
+        if (!workspaceId) {
+            console.log('[loadAllTaskAssignments] No workspaceId, skipping');
+            return;
+        }
+        try {
+            console.log('[loadAllTaskAssignments] Fetching assignments for workspace:', workspaceId);
+            const res = await fetch(`/api/workspace/assignments?workspaceId=${workspaceId}`);
+            if (res.ok) {
+                const data = await res.json();
+                console.log('[loadAllTaskAssignments] Got assignments:', data.assignments);
+                // Build object of taskId -> assignments (using object for better Svelte reactivity)
+                const newMap: Record<string, TaskAssignment[]> = {};
+                for (const assignment of data.assignments || []) {
+                    if (!newMap[assignment.taskId]) {
+                        newMap[assignment.taskId] = [];
+                    }
+                    newMap[assignment.taskId].push(assignment);
+                }
+                taskAssignmentsMap = newMap; // Reassign to trigger reactivity
+                console.log('[loadAllTaskAssignments] Built map with', Object.keys(newMap).length, 'tasks having assignments');
+            } else {
+                console.error('[loadAllTaskAssignments] Response not ok:', res.status);
+            }
+        } catch (err) {
+            console.error('Failed to load task assignments:', err);
+        }
+    }
+
+    function getTaskAssignees(taskId: string): TaskAssignment[] {
+        const assignees = taskAssignmentsMap[taskId] || [];
+        if (assignees.length > 0) {
+            console.log('[getTaskAssignees] Task', taskId, 'has', assignees.length, 'assignees');
+        }
+        return assignees;
+    }
+
+    function handleAvatarImageError(event: Event) {
+        const img = event.currentTarget as HTMLImageElement;
+        img.style.display = 'none';
+        const nextEl = img.nextElementSibling as HTMLElement | null;
+        if (nextEl) nextEl.classList.remove('hidden');
+    }
+
+    function openShareModal() {
+        isShareModalOpen = true;
+    }
 
     // --- KANBAN INTERFACES ---
     interface PlaceholderTask {
@@ -308,7 +398,37 @@
         }
     }
 
+    // Get current user's ID from workspace members
+    $: currentUserId = workspaceMembers.find(m => m.isCurrentUser)?.userId || '';
+
+    // Priority order: high > medium > standard > low
+    const priorityOrder: Record<string, number> = {
+        'high': 0,
+        'medium': 1,
+        'standard': 2,
+        'low': 3
+    };
+
+    function sortTasksByAssignmentAndPriority(tasks: PlaceholderTask[]): PlaceholderTask[] {
+        return [...tasks].sort((a, b) => {
+            // Check if tasks are assigned to current user
+            const aAssignedToMe = currentUserId && taskAssignmentsMap[a.id]?.some(assign => assign.userId === currentUserId);
+            const bAssignedToMe = currentUserId && taskAssignmentsMap[b.id]?.some(assign => assign.userId === currentUserId);
+            
+            // Assigned to me first
+            if (aAssignedToMe && !bAssignedToMe) return -1;
+            if (!aAssignedToMe && bAssignedToMe) return 1;
+            
+            // Then sort by priority
+            const aPriority = priorityOrder[String(a.priority).toLowerCase()] ?? priorityOrder['standard'];
+            const bPriority = priorityOrder[String(b.priority).toLowerCase()] ?? priorityOrder['standard'];
+            return aPriority - bPriority;
+        });
+    }
+
     $: {
+        // Dependencies: data.tasks, taskAssignmentsMap, currentUserId (for sorting)
+        const _deps = [data.tasks, taskAssignmentsMap, currentUserId];
         console.log('Value of data.user:', data.user); // Added for debugging
         usernameForDisplay = data.user?.name || 'User';
 
@@ -333,7 +453,7 @@
             let tempBoardColumns = Array.from(tasksByDateGroup.entries()).map(([dateKey, tasks]) => ({
                 id: dateKey, 
                 title: formatDateForColumnTitle(dateKey),
-                tasks: tasks,
+                tasks: sortTasksByAssignmentAndPriority(tasks),
             }));
 
             tempBoardColumns.sort((a, b) => {
@@ -342,25 +462,10 @@
                 return a.id.localeCompare(b.id);
             });
             
-            if (savedLayout && savedLayout.taskOrders) {
-                const taskOrdersFromStorage = savedLayout.taskOrders;
-                tempBoardColumns.forEach(column => {
-                    const orderedTaskIdsForColumn = taskOrdersFromStorage[column.id]; 
-                    if (orderedTaskIdsForColumn && orderedTaskIdsForColumn.length > 0) {
-                        const taskMapInColumn = new Map(column.tasks.map(t => [t.id, t]));
-                        const sortedTasks: PlaceholderTask[] = [];
-                        
-                        orderedTaskIdsForColumn.forEach(taskId => {
-                            if (taskMapInColumn.has(taskId)) {
-                                sortedTasks.push(taskMapInColumn.get(taskId)!);
-                                taskMapInColumn.delete(taskId); 
-                            }
-                        });
-                        sortedTasks.push(...taskMapInColumn.values());
-                        column.tasks = sortedTasks;
-                    }
-                });
-            }
+            // Note: savedLayout reordering is now secondary to the assignment/priority sort
+            // If you want manual drag order to override, you can remove the sort above
+            // For now, assignment+priority sorting takes precedence
+            
             boardColumns = tempBoardColumns;
 
         } else {
@@ -428,6 +533,16 @@
 
 	onMount(() => {
         loadBoardStateFromLocalStorage();
+        
+        // Load workspace members and task assignments before showing the page
+        Promise.all([
+            loadWorkspaceMembers(),
+            loadAllTaskAssignments()
+        ]).then(() => {
+            // Mark page as ready after initial data load
+            isPageReady = true;
+        });
+        
         DUMMY_DRAG_IMAGE = new Image();
         DUMMY_DRAG_IMAGE.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 
@@ -712,6 +827,13 @@
 </script>
 
 <!-- HTML Structure -->
+<!-- Loading overlay until all data is ready -->
+{#if !isPageReady}
+    <div class="page-loading-overlay">
+        <LoadingIndicator />
+    </div>
+{/if}
+
 <div class="page-wrapper font-sans" class:sidebar-open={isSidebarOpen}>
     {#if isLoadingOperation}
         <LoadingIndicator fullScreen={true} />
@@ -793,13 +915,34 @@
 
         <main class="main-content-kanban">
             <div class="board-header-kanban">
-                <h1 class="board-title-kanban">Tasks by Due Date</h1>
-               <button
-            class="add-task-board-button"
-            on:click={() => openAddTaskModal(NO_DUE_DATE_COLUMN_ID)}
-        >
-            + Add a new task
-        </button>
+                <div class="board-header-left">
+                    <h1 class="board-title-kanban">{workspaceName}</h1>
+                    {#if isCollaborative}
+                        <MemberList members={workspaceMembers} compact={true} maxDisplay={3} />
+                    {/if}
+                </div>
+                <div class="board-header-actions">
+                    <button
+                        class="share-workspace-button"
+                        on:click={openShareModal}
+                        title="Share workspace"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="18" cy="5" r="3"></circle>
+                            <circle cx="6" cy="12" r="3"></circle>
+                            <circle cx="18" cy="19" r="3"></circle>
+                            <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
+                            <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
+                        </svg>
+                        Share
+                    </button>
+                    <button
+                        class="add-task-board-button"
+                        on:click={() => openAddTaskModal(NO_DUE_DATE_COLUMN_ID)}
+                    >
+                        + Add a new task
+                    </button>
+                </div>
             </div>
             <div class="kanban-board-scroll-container" bind:this={kanbanScrollContainer}>
                 <div class="kanban-board">
@@ -870,6 +1013,36 @@
                                                     </span>
                                                 {/if}
                                             </div>
+                                            <!-- Assignee avatars (using assignmentsVersion for reactivity) -->
+                                            {#key assignmentsVersion}
+                                                {#if taskAssignmentsMap[task.id]?.length > 0}
+                                                    <div class="card-assignees">
+                                                        {#each taskAssignmentsMap[task.id].slice(0, 3) as assignee (assignee.id)}
+                                                            {#if assignee.photoURL}
+                                                                <img 
+                                                                    class="card-assignee-avatar"
+                                                                    src={assignee.photoURL}
+                                                                    alt={assignee.username}
+                                                                    title={assignee.username}
+                                                                    on:error={handleAvatarImageError}
+                                                                />
+                                                                <div class="card-assignee-avatar card-assignee-letter hidden" title={assignee.username}>
+                                                                    {assignee.username.charAt(0).toUpperCase()}
+                                                                </div>
+                                                            {:else}
+                                                                <div class="card-assignee-avatar card-assignee-letter" title={assignee.username}>
+                                                                    {assignee.username.charAt(0).toUpperCase()}
+                                                                </div>
+                                                            {/if}
+                                                        {/each}
+                                                        {#if taskAssignmentsMap[task.id].length > 3}
+                                                            <div class="card-assignee-avatar card-assignee-more" title="{taskAssignmentsMap[task.id].length - 3} more">
+                                                                +{taskAssignmentsMap[task.id].length - 3}
+                                                            </div>
+                                                        {/if}
+                                                    </div>
+                                                {/if}
+                                            {/key}
                                         </div>
                                     </div>
                                 {/each}
@@ -899,8 +1072,14 @@
 </div>
 {/if}
 
-<TaskDetailModal bind:isOpen={isTaskDetailModalOpen} task={selectedTaskForModal} 
+<TaskDetailModal 
+    bind:isOpen={isTaskDetailModalOpen} 
+    task={selectedTaskForModal} 
+    workspaceId={workspaceId}
+    workspaceMembers={workspaceMembers}
+    userRole={userRole}
     on:close={() => isTaskDetailModalOpen = false}
+    on:assignmentsChanged={loadAllTaskAssignments}
     on:updated={async () => {
         isLoadingOperation = true; // Start loading for task update
         console.log('Task update action completed, refreshing data...');
@@ -921,14 +1100,22 @@
                 body: formData
             });
             const result = await response.json();
+            
+            // SvelteKit form action responses have data nested under 'data' property
+            const formResult = result.data ?? result;
 
-            if (result.deleteTaskForm?.successMessage) {
-                console.log(result.deleteTaskForm.successMessage);
+            if (formResult.deleteTaskForm?.successMessage) {
+                console.log(formResult.deleteTaskForm.successMessage);
                 await invalidateAll(); // Refresh list
-            } else if (result.deleteTaskForm?.error) {
-                alert(`Error deleting task: ${result.deleteTaskForm.error}`);
+            } else if (formResult.deleteTaskForm?.error) {
+                alert(`Error deleting task: ${formResult.deleteTaskForm.error}`);
             } else {
-                alert('An unknown error occurred while deleting the task.');
+                // If we got here but response was ok, it might have succeeded
+                if (response.ok) {
+                    await invalidateAll();
+                } else {
+                    alert('An unknown error occurred while deleting the task.');
+                }
             }
         } catch (error) {
             console.error('Error deleting task:', error);
@@ -995,9 +1182,36 @@
     </div>
 </div>
 {/if}
+
+<!-- Share Modal for collaboration -->
+<ShareModal 
+    bind:isOpen={isShareModalOpen}
+    {workspaceId}
+    {workspaceName}
+    currentUserRole={userRole}
+    on:close={() => { isShareModalOpen = false; loadWorkspaceMembers(); }}
+    on:memberRemoved={loadWorkspaceMembers}
+/>
+
 <style>
     /* --- SHARED STYLES --- */
     .font-sans { font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+    .page-loading-overlay { 
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        display: flex; 
+        align-items: center; 
+        justify-content: center; 
+        background-color: rgba(255, 255, 255, 0.85);
+        backdrop-filter: blur(2px);
+        z-index: 9999;
+    }
+    :global(body.dark) .page-loading-overlay { 
+        background-color: rgba(24, 24, 27, 0.85);
+    }
     .page-wrapper { display: flex; min-height: 100vh; color: #1f2937; background-color: #ffffff; }
     canvas { display: block; } .hidden-dropdown { display: none !important; } .capitalize { text-transform: capitalize; }
 	.sidebar-container { background-color: #ffffff; border-right: 1px solid #e5e7eb; color: #374151; position: fixed; top: 0; left: 0; height: 100%; width: 16rem; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05); z-index: 50; display: flex; flex-direction: column; justify-content: space-between; padding: 1rem; box-sizing: border-box; }
@@ -1017,7 +1231,33 @@
     .main-content-wrapper { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
     .main-content-kanban { padding-top: 60px; flex-grow: 1; display: flex; flex-direction: column; overflow: hidden; box-sizing: border-box; background-color: var(--bg-light); color: var(--text-light-primary); }
     .board-header-kanban { display: flex; justify-content: space-between; align-items: center; padding: 10px 1rem; flex-shrink: 0; box-sizing: border-box; }
+    .board-header-left { display: flex; align-items: center; gap: 1rem; }
+    .board-header-actions { display: flex; align-items: center; gap: 0.5rem; }
     .board-title-kanban { font-size: 1.25rem; font-weight: 700; color: inherit; margin: 0; }
+    
+    .share-workspace-button {
+        display: flex;
+        align-items: center;
+        gap: 0.375rem;
+        padding: 0.375rem 0.75rem;
+        background-color: #3b82f6;
+        color: white;
+        border: none;
+        border-radius: 6px;
+        font-size: 0.8rem;
+        font-weight: 500;
+        cursor: pointer;
+        transition: background-color 0.15s;
+    }
+    .share-workspace-button:hover {
+        background-color: #2563eb;
+    }
+    :global(body.dark) .share-workspace-button {
+        background-color: #2563eb;
+    }
+    :global(body.dark) .share-workspace-button:hover {
+        background-color: #1d4ed8;
+    }
     :global(body.dark) .page-wrapper { color: #d1d5db; background-color: var(--bg-dark); }
     :global(body.dark) .sidebar-container { background-color: #1f2937; border-right-color: #374151; color: #d1d5db; }
     :global(body.dark) .sidebar-header { border-bottom-color: #374151; } :global(body.dark) .sidebar-title { color: #f3f4f6; }
@@ -1235,6 +1475,48 @@
     :global(body.dark) .card-meta-icons { color: var(--text-dark-secondary); }
     .meta-icon { display: flex; align-items: center; gap: 4px; font-size: 0.75em; }
     .due-date-text { font-size: 0.85em; }
+    
+    /* Card Assignee Avatars */
+    .card-assignees { 
+        display: flex; 
+        align-items: center; 
+        margin-left: auto;
+    }
+    .card-assignee-avatar { 
+        width: 22px; 
+        height: 22px; 
+        border-radius: 50%; 
+        border: 2px solid var(--surface-light);
+        margin-left: -6px;
+        object-fit: cover;
+        font-size: 10px;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background-color: var(--interactive-light);
+        color: white;
+        flex-shrink: 0;
+    }
+    .card-assignee-avatar:first-child { margin-left: 0; }
+    :global(body.dark) .card-assignee-avatar { 
+        border-color: var(--surface-dark);
+        background-color: var(--interactive-dark);
+    }
+    .card-assignee-letter {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+    :global(body.dark) .card-assignee-letter {
+        background: linear-gradient(135deg, #5a67d8 0%, #6b46c1 100%);
+    }
+    .card-assignee-more {
+        background-color: #6b7280;
+        font-size: 9px;
+    }
+    :global(body.dark) .card-assignee-more {
+        background-color: #4b5563;
+    }
+    .hidden { display: none !important; }
     .priority-high { border-left-color: var(--priority-high-light); }
     .priority-medium { border-left-color: var(--priority-medium-light); }
     .priority-low { border-left-color: var(--priority-low-light); }
