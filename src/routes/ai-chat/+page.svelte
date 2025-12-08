@@ -20,11 +20,19 @@
   let showInitialPlaceholder = true;
   let chatMessagesContainer: HTMLDivElement;
   
+  const CONTEXT_WINDOW_SIZE = 10; // Number of messages to include in context
+  
   interface ChatMessage {
     id: number;
     text: string;
     isUser: boolean;
     isError: boolean;
+  }
+  
+  // For API - simplified message format
+  interface APIMessage {
+    role: 'user' | 'assistant';
+    content: string;
   }
   
   let messages: ChatMessage[] = [];
@@ -45,6 +53,7 @@
   function toggleDarkMode() {
     isDarkMode = !isDarkMode;
     if (browser) {
+      document.documentElement.classList.toggle('dark', isDarkMode);
       document.body.classList.toggle('dark', isDarkMode);
       localStorage.setItem('theme', isDarkMode ? 'dark' : 'light');
     }
@@ -79,7 +88,7 @@
     chatInput = '';
     showInitialPlaceholder = false;
 
-    // Add user message
+    // Add user message to local display
     messages = [...messages, {
       id: messageIdCounter++,
       text: userMsgText,
@@ -92,14 +101,34 @@
 
     isTyping = true;
 
-    const aiContextPreamble = `You are Synthia, a helpful AI assistant integrated into the Microtask productivity app. Keep your answers concise and relevant to task management, scheduling, note-taking, and general productivity. The user's name is ${username || 'User'}. Today's date is ${new Date().toLocaleDateString()}. \n\nUser query: `;
-    const fullMessageToSend = aiContextPreamble + userMsgText;
+    // Build conversation history for API (last N messages, excluding errors)
+    const conversationHistory: APIMessage[] = messages
+      .filter(msg => !msg.isError) // Exclude error messages
+      .slice(-CONTEXT_WINDOW_SIZE) // Get last N messages
+      .map(msg => ({
+        role: msg.isUser ? 'user' as const : 'assistant' as const,
+        content: msg.text.replace(/<[^>]*>/g, '') // Strip HTML tags for API
+      }));
+
+    // System prompt with context
+    const systemPrompt = `You are Synthia, a helpful AI assistant integrated into the Microtask productivity app. 
+Rules:
+- Give direct, concise answers without asking follow-up questions.
+- Do NOT offer to create tasks, set reminders, or log anything unless explicitly asked.
+- Do NOT end responses with yes/no questions or "Would you like me to...?" prompts.
+- Just answer the question directly and helpfully.
+- Keep responses brief and to the point.
+
+The user's name is ${username || 'User'}. Today's date is ${new Date().toLocaleDateString()}.`;
 
     try {
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: fullMessageToSend })
+        body: JSON.stringify({ 
+          messages: conversationHistory,
+          systemPrompt: systemPrompt
+        })
       });
 
       const responseData = await response.json();
@@ -159,6 +188,7 @@
     if (browser) {
       const savedTheme = localStorage.getItem('theme');
       isDarkMode = savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.classList.toggle('dark', isDarkMode);
       document.body.classList.toggle('dark', isDarkMode);
 
       // Update date/time

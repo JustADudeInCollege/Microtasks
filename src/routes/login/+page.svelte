@@ -26,6 +26,7 @@
 		const savedTheme = localStorage.getItem('theme');
 		const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
 		isDarkMode = savedTheme === 'dark' || (!savedTheme && prefersDark);
+		document.documentElement.classList.toggle('dark', isDarkMode);
 		document.body.classList.toggle('dark', isDarkMode);
 
 		// Check for messages passed via URL parameters (e.g., after signup/password reset)

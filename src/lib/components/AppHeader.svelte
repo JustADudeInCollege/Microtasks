@@ -350,56 +350,25 @@
       </button>
       {#if showNotifDropdown}
       <div class={`dropdown-window w-96 max-h-96 overflow-y-auto custom-scrollbar ${isDarkMode ? 'bg-zinc-700 border-zinc-600 text-zinc-300' : 'bg-white border-gray-200 text-gray-700'}`}>
-        <div class="mb-3">
+        <div class="mb-3 notif-header">
           <h3 class="font-semibold text-sm">Notifications</h3>
           {#if userNotifications.some(n => !n.isRead)}
             <button 
-              class="text-xs text-blue-500 hover:text-blue-600 hover:underline cursor-pointer mt-1"
+              class="mark-all-btn text-xs text-blue-500 hover:text-blue-600 hover:underline mr-5"
               on:click|stopPropagation={markAllNotificationsRead}
             >
-              Mark all as read
+              Mark as read
             </button>
           {/if}
         </div>
         
-        {#if isLoadingInvitations && isLoadingNotifications}
+          {#if isLoadingInvitations && isLoadingNotifications}
           <p class="text-xs text-center py-4">Loading...</p>
         {:else if pendingInvitations.length === 0 && userNotifications.length === 0}
           <p class="text-xs text-center py-4 opacity-70">No new notifications.</p>
         {:else}
           <div class="space-y-3">
-            <!-- Task Assignment Notifications -->
-            {#each userNotifications as notification (notification.id)}
-              <div class={`notification-card p-3 rounded-lg transition-opacity ${notification.isRead ? 'opacity-50' : ''} ${isDarkMode ? (notification.isRead ? 'bg-zinc-700' : 'bg-zinc-600') : (notification.isRead ? 'bg-gray-100' : 'bg-blue-50')}`}>
-                <div class="flex justify-between items-start">
-                  <div class="flex-1">
-                    <p class={`text-sm ${notification.isRead ? 'font-normal' : 'font-medium'}`}>{notification.title}</p>
-                    <p class="text-xs mt-1 opacity-80">{notification.message}</p>
-                    {#if notification.workspaceName}
-                      <p class="text-xs mt-1 opacity-60">in {notification.workspaceName}</p>
-                    {/if}
-                    <p class="text-xs mt-1 opacity-50">{notification.timeAgo}</p>
-                  </div>
-                  <button 
-                    class="text-xs opacity-60 hover:opacity-100 ml-2"
-                    on:click|stopPropagation={() => notification.isRead ? dismissNotification(notification.id) : markNotificationRead(notification.id)}
-                    title={notification.isRead ? 'Dismiss' : 'Mark as read'}
-                  >
-                    ✕
-                  </button>
-                </div>
-                {#if notification.taskId && notification.workspaceId}
-                  <button 
-                    class="mt-2 text-xs text-blue-500 hover:text-blue-600"
-                    on:click|stopPropagation={() => { goto(`/workspace/${notification.workspaceId}`); showNotifDropdown = false; }}
-                  >
-                    View Task →
-                  </button>
-                {/if}
-              </div>
-            {/each}
-
-            <!-- Workspace Invitations -->
+            <!-- Workspace Invitations (render first so invites appear at top) -->
             {#each pendingInvitations as invitation (invitation.id)}
               <div class={`invitation-card p-3 rounded-lg ${isDarkMode ? 'bg-zinc-600' : 'bg-gray-50'}`}>
                 <div class="flex items-start gap-2 mb-2">
@@ -438,6 +407,37 @@
                     Decline
                   </button>
                 </div>
+              </div>
+            {/each}
+
+            <!-- Task Assignment Notifications -->
+            {#each userNotifications as notification (notification.id)}
+              <div class={`notification-card p-3 rounded-lg transition-opacity ${notification.isRead ? 'opacity-50' : ''} ${isDarkMode ? (notification.isRead ? 'bg-zinc-700' : 'bg-zinc-600') : (notification.isRead ? 'bg-gray-100' : 'bg-blue-50')}`}>
+                <div class="flex justify-between items-start">
+                  <div class="flex-1">
+                    <p class={`text-sm ${notification.isRead ? 'font-normal' : 'font-medium'}`}>{notification.title}</p>
+                    <p class="text-xs mt-1 opacity-80">{notification.message}</p>
+                    {#if notification.workspaceName}
+                      <p class="text-xs mt-1 opacity-60">in {notification.workspaceName}</p>
+                    {/if}
+                    <p class="text-xs mt-1 opacity-50">{notification.timeAgo}</p>
+                  </div>
+                  <button 
+                    class="text-xs opacity-60 hover:opacity-100 ml-2"
+                    on:click|stopPropagation={() => notification.isRead ? dismissNotification(notification.id) : markNotificationRead(notification.id)}
+                    title={notification.isRead ? 'Dismiss' : 'Mark as read'}
+                  >
+                    ✕
+                  </button>
+                </div>
+                {#if notification.taskId && notification.workspaceId}
+                  <button 
+                    class="mt-2 text-xs text-blue-500 hover:text-blue-600"
+                    on:click|stopPropagation={() => { goto(`/workspace/${notification.workspaceId}`); showNotifDropdown = false; }}
+                  >
+                    View →
+                  </button>
+                {/if}
               </div>
             {/each}
           </div>
@@ -627,13 +627,19 @@
   }
 
   .dropdown-window {
-    position: absolute;
-    right: 0;
-    top: calc(100% + 8px);
+    /* Use fixed positioning so dropdowns don't get clipped by parent overflow
+       and so they always stay within the viewport. Positioned below the
+       fixed header (60px) with a small gap. */
+    position: fixed;
+    /* move the dropdown slightly left from the viewport edge to avoid truncation */
+    right: 2.5rem;
+    top: calc(60px + 8px);
     border-radius: 0.5rem;
     box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-    padding: 0.75rem;
+    padding: 0.75rem 1rem; /* add extra right padding so text doesn't butt up against the edge */
     min-width: 320px;
+    max-width: calc(100vw - 64px);
+    box-sizing: border-box;
     z-index: 50;
     opacity: 0;
     transform: translateY(-5px) scale(0.98);
@@ -678,6 +684,27 @@
     align-items: center;
     justify-content: center;
     padding: 0 4px;
+  }
+
+  /* Notifications header layout */
+  .notif-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+
+  .notif-header h3 {
+    margin: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding-right: 0.5rem; /* ensure heading text is shifted left from the right edge */
+  }
+
+  .mark-all-btn {
+    margin-left: 0.5rem;
+    white-space: nowrap;
   }
 
   /* Invitation card styles */

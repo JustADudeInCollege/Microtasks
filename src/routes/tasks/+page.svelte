@@ -167,6 +167,7 @@
     function toggleDarkMode() { 
       isDarkMode = !isDarkMode;
       if (browser) {
+        document.documentElement.classList.toggle('dark', isDarkMode);
         document.body.classList.toggle('dark', isDarkMode);
         localStorage.setItem('theme', isDarkMode ? 'dark' : 'light');
       }
@@ -183,6 +184,7 @@
         if (browser) {
           const savedTheme = localStorage.getItem('theme');
           isDarkMode = savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches);
+          document.documentElement.classList.toggle('dark', isDarkMode);
           document.body.classList.toggle('dark', isDarkMode);
           if (!data.user?.name) username = localStorage.getItem('microtask_username') || "User";
 

@@ -129,7 +129,7 @@
   }
   function prevMonth() { currentMonth--; if (currentMonth < 0) { currentMonth = 11; currentYear--; } updateCalendarDays(); }
   function nextMonth() { currentMonth++; if (currentMonth > 11) { currentMonth = 0; currentYear++; } updateCalendarDays(); }
-  function toggleDarkMode() { isDarkMode = !isDarkMode; if (browser) { document.body.classList.toggle('dark', isDarkMode); localStorage.setItem('theme', isDarkMode ? 'dark' : 'light'); } }
+  function toggleDarkMode() { isDarkMode = !isDarkMode; if (browser) { document.documentElement.classList.toggle('dark', isDarkMode); document.body.classList.toggle('dark', isDarkMode); localStorage.setItem('theme', isDarkMode ? 'dark' : 'light'); } }
   function toggleSidebar() { isSidebarOpen = !isSidebarOpen; }
   function updateDateTime() {
     const now = new Date();
@@ -293,6 +293,7 @@
     if (browser) {
       const savedTheme = localStorage.getItem('theme');
       isDarkMode = savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.classList.toggle('dark', isDarkMode);
       document.body.classList.toggle('dark', isDarkMode);
       
       // Update date/time
@@ -527,6 +528,7 @@
     bind:isOpen={isTaskDetailModalOpen} 
     task={selectedTaskForModal} 
     {isDarkMode}
+    userRole="owner"
     on:close={() => isTaskDetailModalOpen = false}
     on:updated={async () => {
         await invalidateAll();

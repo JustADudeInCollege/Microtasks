@@ -30,6 +30,7 @@
   let showTaskForm = false;
   let showCompletedTasks = false;
   let showDeleteConfirmation = false;
+  let pendingDeleteNoteId: string | null = null;
 
   let taskTitle = "";
   let taskDescription = "";
@@ -132,6 +133,7 @@
   function toggleDarkMode() {
     isDarkMode = !isDarkMode;
     if (browser) {
+      document.documentElement.classList.toggle('dark', isDarkMode);
       document.body.classList.toggle('dark', isDarkMode);
       localStorage.setItem('theme', isDarkMode ? 'dark' : 'light');
     }
@@ -478,15 +480,31 @@
     finally { isRefreshingNotes = false; isRefreshingTasks = false; }
   }
   function confirmDelete() { 
-    const noteModalForm = document.querySelector<HTMLFormElement>('#note-modal-form');
-    if (!noteModalForm || !editingNoteId) return; 
+    // Determine which note ID to delete: prefer pendingDeleteNoteId (from list), fallback to editingNoteId (from modal)
+    const idToDelete = pendingDeleteNoteId ?? editingNoteId;
+    if (!idToDelete) return;
     showDeleteConfirmation = false;
-    const tempDeleteButton = document.createElement('button');
-    tempDeleteButton.type = 'submit'; tempDeleteButton.formAction = `?/deleteNote`;
-    tempDeleteButton.style.display = 'none';
-    noteModalForm.appendChild(tempDeleteButton);
-    tempDeleteButton.click();
-    noteModalForm.removeChild(tempDeleteButton);
+    pendingDeleteNoteId = null;
+    editingNoteId = null;
+
+    // Send a form-encoded POST to the local action ?/deleteNote
+    const body = new URLSearchParams();
+    body.append('id', idToDelete);
+    fetch(`?/deleteNote`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body.toString()
+    }).then(async (res) => {
+      if (!res.ok) {
+        const text = await res.text().catch(() => 'Failed to delete note.');
+        errorMessage = text || 'Failed to delete note.';
+      } else {
+        await invalidateAll();
+      }
+    }).catch((err) => {
+      console.error('Delete note request failed:', err);
+      errorMessage = 'Failed to delete note.';
+    });
   }
 
   let globalMouseMoveListener: ((event: MouseEvent) => void) | null = null;
@@ -500,6 +518,7 @@
       const savedTheme = localStorage.getItem('theme');
       const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
       isDarkMode = savedTheme === 'dark' || (!savedTheme && prefersDark);
+      document.documentElement.classList.toggle('dark', isDarkMode);
       document.body.classList.toggle('dark', isDarkMode);
     }
     // fetchUsernameFromFirebase() call is removed
@@ -746,15 +765,7 @@
             </div>
             <a href="/kanban" class={`text-sm hover:underline mt-auto pt-2 flex-shrink-0 ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`}>View all tasks</a>
             {#if !showTaskForm}
-              <button
-                type="button"
-                on:click={openAddTaskForm}
-                class="absolute bottom-4 right-4 bg-blue-600 text-white rounded-full p-2.5 w-10 h-10 flex items-center justify-center shadow-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all duration-150 ease-in-out z-20 transform hover:scale-105"
-                aria-label="Add New Task"
-                transition:scale={{ duration: 150, start: 0.8, opacity: 0.5 }}
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-5 h-5"><path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" /></svg>
-              </button>
+              
             {/if}
           </div>
         </section>
@@ -793,7 +804,8 @@
             {:else if data?.notes && data.notes.length > 0}
               <div class="space-y-3">
                 {#each data.notes as note (note.id)}
-                  <div class={`rounded-lg p-3 flex justify-between items-start group relative shadow-xs ${isDarkMode ? 'bg-zinc-600 border-zinc-500' : 'bg-white border-gray-200'}`}>                    <div class="flex-grow pr-2 overflow-hidden">
+                  <div class={`rounded-lg p-3 flex justify-between items-start group relative shadow-xs ${isDarkMode ? 'bg-zinc-600 border-zinc-500' : 'bg-white border-gray-200'}`}>
+                    <div class="flex-grow pr-2 overflow-hidden">
                       <h3 class={`font-semibold text-base truncate ${isDarkMode ? 'text-zinc-100' : 'text-gray-800'}`}>{note.title}</h3>
                       {#if expandedNoteId !== note.id}
                         <p class={`text-sm truncate mt-1 ${isDarkMode ? 'text-zinc-300' : 'text-gray-600'}`}>{note.content}</p>
@@ -810,6 +822,15 @@
                     <div class="flex items-center gap-1 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
                       <button type="button" on:click={() => openEditNoteForm(note)} class={`p-1 rounded ${isDarkMode ? 'hover:bg-zinc-600 text-zinc-400' : 'hover:bg-gray-200 text-gray-500'}`} aria-label="Edit Note">
                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4" aria-hidden="true"><path d="M5.433 13.917l1.262-3.155A4 4 0 017.58 9.42l6.92-6.918a2.121 2.121 0 013 3l-6.92 6.918c-.383.383-.84.685-1.343.886l-3.154 1.262a.5.5 0 01-.65-.65z" /><path d="M3.5 5.75c0-.69.56-1.25 1.25-1.25H10A.75.75 0 0010 3H4.75A2.75 2.75 0 002 5.75v9.5A2.75 2.75 0 004.75 18h9.5A2.75 2.75 0 0017 15.25V10a.75.75 0 00-1.5 0v5.25c0 .69-.56 1.25-1.25 1.25h-9.5c-.69 0-1.25-.56-1.25-1.25v-9.5z" /></svg>
+                      </button>
+                      <button
+                        type="button"
+                        on:click={() => { pendingDeleteNoteId = note.id; showDeleteConfirmation = true; }}
+                        class={`p-1 rounded ${isDarkMode ? 'hover:bg-zinc-600 text-zinc-400' : 'hover:bg-gray-200 text-gray-500'}`}
+                        aria-label="Delete Note"
+                        title="Delete Note"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4" aria-hidden="true"><path fill-rule="evenodd" d="M6 2.5A1.5 1.5 0 017.5 1h5A1.5 1.5 0 0114 2.5V3h3a.5.5 0 010 1h-.445l-.717 11.078A2.5 2.5 0 0113.35 17H6.65a2.5 2.5 0 01-2.488-1.922L3.45 4H3a.5.5 0 010-1h3v-.5zM8 6a.5.5 0 00-.5.5v7a.5.5 0 001 0v-7A.5.5 0 008 6zm4 0a.5.5 0 00-.5.5v7a.5.5 0 001 0v-7A.5.5 0 0012 6zM7 3v-.5a.5.5 0 00-.5-.5h-.5V3h1z" clip-rule="evenodd"/></svg>
                       </button>
                       <button
                         type="button"
@@ -916,41 +937,7 @@
           use:enhance={noteFormEnhanceCallback}
           class={`flex-grow flex flex-col overflow-y-auto p-4 sm:p-5 custom-scrollbar relative`}
         >
-        {#if showDeleteConfirmation}
-          <div
-            class="absolute inset-0 z-10 flex items-center justify-center bg-black bg-opacity-30 backdrop-blur-sm"
-            on:click|self={() => showDeleteConfirmation = false}
-            transition:fade={{ duration: 100 }}
-          >
-            <div
-              class={`rounded-lg shadow-xl p-6 w-full max-w-sm mx-4 ${isDarkMode ? 'bg-zinc-700 text-zinc-300' : 'bg-white text-gray-800'}`}
-              on:click|stopPropagation
-              role="alertdialog"
-              aria-labelledby="confirm-delete-title"
-              aria-describedby="confirm-delete-desc"
-              transition:scale={{ duration: 150, start: 0.95, opacity: 0.5 }}
-            >
-              <h4 id="confirm-delete-title" class="text-lg font-semibold mb-2">Confirm Deletion</h4>
-              <p id="confirm-delete-desc" class="text-sm mb-4">Are you sure you want to delete this note? This action cannot be undone.</p>
-              <div class="flex justify-end gap-3">
-                <button
-                  type="button"
-                  class={`px-4 py-2 rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 transition-colors duration-150 ${isDarkMode ? 'bg-zinc-600 text-zinc-300 hover:bg-zinc-500 focus:ring-zinc-500' : 'bg-gray-200 text-gray-800 hover:bg-gray-300 focus:ring-gray-400'}`}
-                  on:click={() => showDeleteConfirmation = false}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-colors duration-150"
-                  on:click={confirmDelete}
-                >
-                  Confirm Delete
-                </button>
-              </div>
-            </div>
-          </div>
-        {/if}
+        <!-- Delete confirmation moved to a global modal (see below) -->
           {#if editingNoteId} <input type="hidden" name="id" value={editingNoteId} /> {/if}
 
           <div class="mb-4">
@@ -977,6 +964,43 @@
         </form>
       </div>
     </div>
+  {/if}
+
+  {#if showDeleteConfirmation}
+    <div
+      class="fixed inset-0 z-[80] flex items-center justify-center bg-black bg-opacity-30 backdrop-blur-sm"
+      on:click|self={() => { showDeleteConfirmation = false; pendingDeleteNoteId = null; }}
+      transition:fade={{ duration: 100 }}
+    >
+      <div
+        class={`rounded-lg shadow-xl p-6 w-full max-w-sm mx-4 ${isDarkMode ? 'bg-zinc-700 text-zinc-300' : 'bg-white text-gray-800'}`}
+        on:click|stopPropagation
+        role="alertdialog"
+        aria-labelledby="confirm-delete-title-global"
+        aria-describedby="confirm-delete-desc-global"
+        transition:scale={{ duration: 150, start: 0.95, opacity: 0.5 }}
+      >
+        <h4 id="confirm-delete-title-global" class="text-lg font-semibold mb-2">Confirm Deletion</h4>
+        <p id="confirm-delete-desc-global" class="text-sm mb-4">Are you sure you want to delete this note? This action cannot be undone.</p>
+        <div class="flex justify-end gap-3">
+          <button
+            type="button"
+            class={`px-4 py-2 rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 transition-colors duration-150 ${isDarkMode ? 'bg-zinc-600 text-zinc-300 hover:bg-zinc-500 focus:ring-zinc-500' : 'bg-gray-200 text-gray-800 hover:bg-gray-300 focus:ring-gray-400'}`}
+            on:click={() => { showDeleteConfirmation = false; pendingDeleteNoteId = null; }}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-colors duration-150"
+            on:click={confirmDelete}
+          >
+            Confirm Delete
+          </button>
+        </div>
+      </div>
+    </div>
+
   {/if}
 
   {#if showTaskForm}

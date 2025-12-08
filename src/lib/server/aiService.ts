@@ -16,12 +16,25 @@ export interface OriginalTemplateStep {
 // Helper function to delay execution
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-// Groq API completion function
+// Chat message type for conversation history
+export interface ChatMessageForAPI {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+}
+
+// Groq API completion function with conversation history support
 export async function getOpenRouterCompletion(prompt: string, throwOnError: boolean = false): Promise<string | null> {
-  const model = 'openai/gpt-oss-120b';
+  // For backwards compatibility, wrap single prompt in messages array
+  return getChatCompletion([{ role: 'user', content: prompt }], throwOnError);
+}
+
+// New function that accepts conversation history
+export async function getChatCompletion(messages: ChatMessageForAPI[], throwOnError: boolean = false): Promise<string | null> {
+  const model = 'llama-3.3-70b-versatile';
 
   try {
-    console.log(`DEBUG: Calling Groq with model: ${model}`);
+    console.log(`DEBUG: Calling Groq with model: ${model}, messages count: ${messages.length}`);
+    console.log(`DEBUG: Messages being sent:`, JSON.stringify(messages.map(m => ({ role: m.role, contentLength: m.content.length }))));
 
     const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
@@ -31,7 +44,7 @@ export async function getOpenRouterCompletion(prompt: string, throwOnError: bool
       },
       body: JSON.stringify({
         model: model,
-        messages: [{ role: 'user', content: prompt }],
+        messages: messages,
         temperature: 0.7,
         max_tokens: 2048
       })

@@ -14,9 +14,9 @@
     let selectedMonth: string = '';
     let selectedDay: string = '';
     
-    // Generate year options (current year - 1 to current year + 5)
+    // Generate year options: current year through current year + 90
     const currentYear = new Date().getFullYear();
-    const years = Array.from({ length: 7 }, (_, i) => currentYear - 1 + i);
+    let years: number[] = Array.from({ length: 91 }, (_, i) => currentYear + i);
     
     // Month names
     const months = [
@@ -54,6 +54,14 @@
         selectedYear = y;
         selectedMonth = m;
         selectedDay = d;
+    }
+
+    // Ensure the parsed/pre-filled year is present in the years list (useful when editing old tasks)
+    $: if (selectedYear) {
+        const sy = parseInt(selectedYear);
+        if (!years.includes(sy)) {
+            years = [...years, sy].sort((a, b) => a - b);
+        }
     }
     
     // Combine into date string when all fields are selected

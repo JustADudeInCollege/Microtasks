@@ -16,6 +16,7 @@
     function toggleDarkMode() {
         isDarkMode = !isDarkMode;
         if (browser) {
+            document.documentElement.classList.toggle('dark', isDarkMode);
             document.body.classList.toggle('dark', isDarkMode);
             localStorage.setItem('theme', isDarkMode ? 'dark' : 'light');
         }
@@ -62,6 +63,7 @@
             const savedTheme = localStorage.getItem('theme');
             const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
             isDarkMode = savedTheme === 'dark' || (!savedTheme && prefersDark);
+            document.documentElement.classList.toggle('dark', isDarkMode);
             document.body.classList.toggle('dark', isDarkMode);
         }
 

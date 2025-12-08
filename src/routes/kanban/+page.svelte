@@ -1048,6 +1048,7 @@
     function toggleDarkMode() {
 		isDarkMode = !isDarkMode;
         if (browser) {
+		    document.documentElement.classList.toggle('dark', isDarkMode);
 		    document.body.classList.toggle('dark', isDarkMode);
             localStorage.setItem('theme', isDarkMode ? 'dark' : 'light');
         }
@@ -1314,6 +1315,7 @@
 {/if}
 
 <TaskDetailModal bind:isOpen={isTaskDetailModalOpen} task={selectedTaskForModal} {isDarkMode}
+    userRole="owner"
     on:close={() => isTaskDetailModalOpen = false}
     on:updated={async () => {
         isLoadingOperation = true; // Start loading for task update

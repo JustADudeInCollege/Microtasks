@@ -519,6 +519,7 @@
     function toggleDarkMode() {
 		isDarkMode = !isDarkMode;
         if (browser) {
+		    document.documentElement.classList.toggle('dark', isDarkMode);
 		    document.body.classList.toggle('dark', isDarkMode);
             localStorage.setItem('theme', isDarkMode ? 'dark' : 'light');
         }
