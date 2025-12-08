@@ -27,7 +27,10 @@
  */
 declare module '$env/static/private' {
 	export const GROQ_API_KEY: string;
+	export const CRON_SECRET: string;
 	export const FIREBASE_ADMIN_SDK_JSON: string;
+	export const GMAIL_USER: string;
+	export const GMAIL_APP_PASSWORD: string;
 	export const ALLUSERSPROFILE: string;
 	export const APPDATA: string;
 	export const BUNDLED_DEBUGPY_PATH: string;
@@ -150,7 +153,10 @@ declare module '$env/static/public' {
 declare module '$env/dynamic/private' {
 	export const env: {
 		GROQ_API_KEY: string;
+		CRON_SECRET: string;
 		FIREBASE_ADMIN_SDK_JSON: string;
+		GMAIL_USER: string;
+		GMAIL_APP_PASSWORD: string;
 		ALLUSERSPROFILE: string;
 		APPDATA: string;
 		BUNDLED_DEBUGPY_PATH: string;
