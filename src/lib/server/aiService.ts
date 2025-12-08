@@ -18,7 +18,7 @@ const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 // Groq API completion function
 export async function getOpenRouterCompletion(prompt: string, throwOnError: boolean = false): Promise<string | null> {
-  const model = 'llama-3.3-70b-versatile';
+  const model = 'openai/gpt-oss-120b';
 
   try {
     console.log(`DEBUG: Calling Groq with model: ${model}`);

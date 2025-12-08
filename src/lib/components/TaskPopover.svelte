@@ -110,6 +110,8 @@
                focus:outline-none"
         style="{popoverStyle}"
         on:click|stopPropagation
+        on:mouseenter={() => dispatch('mouseenter')}
+        on:mouseleave={() => dispatch('mouseleave')}
         transition:fly={{ y: 10, duration: 150, opacity: 0 }}
         role="dialog"
         aria-modal="false"

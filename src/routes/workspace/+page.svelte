@@ -1120,11 +1120,21 @@
 
 /* ALERTS */
 .alert {
-    margin: var(--space-4); padding: var(--space-4);
+    position: fixed;
+    top: 70px; /* Below the header (60px) + some spacing */
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 40;
+    padding: var(--space-3) var(--space-6);
     border-width: 1px; border-style: solid;
-    border-radius: var(--rounded-lg); position: relative;
-    box-shadow: var(--shadow-sm);
+    border-radius: var(--rounded-lg);
+    box-shadow: var(--shadow-lg);
     font-size: 0.95rem;
+    max-width: 90%;
+    width: auto;
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
 }
 .alert-error {
     background-color: var(--light-accent-error-bg);

@@ -277,15 +277,19 @@
 </script>
 
 <main
-  class={`flex flex-col justify-center items-center min-h-screen w-full h-full bg-fixed ${isDarkMode ? 'bg-zinc-900' : 'bg-gray-100'}`}
-  style="background-image: url('{isDarkMode ? '/Darkmode.png' : '/background.png'}'); background-position: center; background-repeat: no-repeat; background-size: 85%;"
+  class={`flex flex-col justify-center items-center min-h-screen w-full h-full relative overflow-hidden ${isDarkMode ? 'bg-zinc-900' : 'bg-gray-100'}`}
 >
+  <!-- Background image -->
+  <div 
+      class="absolute inset-0 z-0 bg-cover bg-bottom bg-no-repeat"
+      style={`background-image: url('${isDarkMode ? '/Darkmode.png' : '/background.png'}');`}
+  ></div>
   <img src={isDarkMode ? "/logonamindarkmode.png" : "/logonamin.png"} alt="Microtask Logo" class="absolute top-10 left-10 h-12 scale-150 md:scale-250 z-20" />
   <h1 class={`text-3xl font-bold text-center mb-6 z-10 ${isDarkMode ? 'text-white' : 'text-black'}`} style="text-shadow: 2px 2px 8px rgba(0,0,0,0.7), -1px -1px 4px rgba(0,0,0,0.5);">Welcome to Microtask</h1>
 
   <form
     on:submit|preventDefault={handleSignup}
-    class={`p-6 md:p-8 rounded-lg shadow-2xl border max-w-md w-[90%] md:w-full z-10 ${isDarkMode ? 'bg-zinc-800 border-zinc-600' : 'bg-white border-gray-300'}`}
+    class={`p-6 md:p-8 rounded-xl max-w-md w-[90%] md:w-full z-10 backdrop-blur-sm ${isDarkMode ? 'bg-zinc-800/95 border border-zinc-600 shadow-[0_8px_32px_rgba(0,0,0,0.5)]' : 'bg-white/95 border border-gray-200 shadow-[0_8px_32px_rgba(0,0,0,0.15)]'}`}
   >
     <h2 class={`text-xl font-bold text-center mb-4 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Sign up to continue</h2>
 

@@ -10,6 +10,7 @@
   import type { TaskForFrontend } from '$lib/types/task'; // Import from types file
   import TaskPopover from '$lib/components/TaskPopover.svelte'; // Import new popover component
   import DayTasksModal from '$lib/components/DayTasksModal.svelte'; // Import new modal component
+  import TaskDetailModal from '$lib/components/TaskDetailModal.svelte'; // Import task detail modal
   import AppHeader from '$lib/components/AppHeader.svelte';
 
   export let data: {
@@ -50,10 +51,15 @@
   let selectedTaskForDetails: TaskForFrontend | null = null;
   let popoverX: number = 0; // X coordinate for popover
   let popoverY: number = 0; // Y coordinate for popover
+  let hoverTimeout: ReturnType<typeof setTimeout> | null = null; // For delayed close on hover
 
   let showDayTasksModal = false;
   let selectedDayTasks: TaskForFrontend[] = [];
   let selectedDayDate: Date | null = null;
+
+  // Task Detail Modal state
+  let isTaskDetailModalOpen = false;
+  let selectedTaskForModal: TaskForFrontend | null = null;
 
   const dropdownIds = ['notifWindow', 'helpWindow', 'profileWindow'];
 
@@ -144,6 +150,11 @@
   
   // Modified to accept eventId and optionally MouseEvent for positioning
   function openTaskDetailsPopover(eventId: string, event?: MouseEvent) {
+      // Clear any pending close timeout
+      if (hoverTimeout) {
+          clearTimeout(hoverTimeout);
+          hoverTimeout = null;
+      }
       const task = data.tasks.find(t => t.id === eventId);
       if (task) {
           selectedTaskForDetails = task;
@@ -162,6 +173,21 @@
       }
   }
   function closeTaskDetailsPopover() { showTaskDetailsPopover = false; selectedTaskForDetails = null; } // Changed from Modal to Popover
+  
+  // Delayed close for hover - allows moving mouse to popover
+  function scheduleClosePopover() {
+      if (hoverTimeout) clearTimeout(hoverTimeout);
+      hoverTimeout = setTimeout(() => {
+          closeTaskDetailsPopover();
+      }, 200); // 200ms delay before closing
+  }
+  
+  function cancelClosePopover() {
+      if (hoverTimeout) {
+          clearTimeout(hoverTimeout);
+          hoverTimeout = null;
+      }
+  }
 
   function openDayTasksModal(day: Day) {
       selectedDayDate = day.date;
@@ -171,6 +197,12 @@
           return taskYear === day.date.getFullYear() && (taskMonth - 1) === day.date.getMonth() && taskDay === day.date.getDate();
       });
       showDayTasksModal = true;
+  }
+
+  // Open full Task Detail Modal
+  function openTaskDetailModal(task: TaskForFrontend) {
+      selectedTaskForModal = task;
+      isTaskDetailModalOpen = true;
   }
   function closeDayTasksModal() {
       showDayTasksModal = false;
@@ -453,7 +485,7 @@
                 {:else if daysInMonth.length > 0}
                     {#each daysInMonth as day (day.date.toISOString() + '-' + day.dayNum + '-' + day.events.map(e=>e.id + (e.deadlineTime || '')).join('-'))} <div class={`p-0.5 sm:p-1 border flex flex-col transition-colors duration-150 cursor-pointer relative group overflow-hidden ${!day.isCurrentMonth ? (isDarkMode ? 'bg-zinc-850 border-zinc-750 text-zinc-600' : 'bg-gray-50 border-gray-100 text-gray-400') : (isDarkMode ? 'bg-zinc-750 border-zinc-700 hover:bg-zinc-700' : 'bg-white border-gray-200 hover:bg-gray-50')} ${day.isToday && day.isCurrentMonth ? (isDarkMode ? '!border-blue-500 ring-1 ring-blue-500 !bg-zinc-700' : '!border-blue-500 ring-1 ring-blue-500 !bg-blue-50') : ''}`} role="gridcell" aria-label={`Date ${day.date.toLocaleDateString()}${day.events.length ? ', ' + day.events.length + ' event' + (day.events.length > 1 ? 's' : '') : ''}`} on:click={() => openDayTasksModal(day)} tabindex="0" on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') openDayTasksModal(day); }}>
                             <span class={`text-[0.65rem] sm:text-xs md:text-sm font-semibold flex-shrink-0 ${day.isToday && day.isCurrentMonth ? (isDarkMode ? 'text-blue-300' : 'text-blue-600') : ''} ${!day.isCurrentMonth ? 'opacity-60' : ''}`}>{day.dayNum}</span>
-                            {#if day.isCurrentMonth && day.events.length > 0} {@const maxEventsToShow = day.events.length > 2 ? 1 : 2} <ul class="mt-0.5 text-[0.5rem] sm:text-[0.6rem] md:text-[0.7rem] space-y-0.5 overflow-hidden flex-1 min-h-0"> {#each day.events.slice(0, maxEventsToShow) as event (event.id)} <li class={`truncate px-0.5 py-px sm:px-1 sm:py-0.5 rounded text-white leading-tight cursor-pointer hover:opacity-80 transition-opacity`} style="background-color: {event.color || (isDarkMode ? '#374151' : '#9CA3AF')};" on:click|stopPropagation={(e) => openTaskDetailsPopover(event.id, e)} on:keydown|stopPropagation={(e) => { if (e.key === 'Enter' || e.key === ' ') openTaskDetailsPopover(event.id); }} tabindex="0" role="button" aria-label={`View details for ${event.title}`} title={event.title + (event.deadlineTime ? ` (DL: ${event.deadlineTime})` : '')}> {event.title} {#if event.deadlineTime}<span class="hidden sm:block text-[0.5rem] sm:text-[0.55rem] opacity-80">DL: {event.deadlineTime}</span>{/if} </li> {/each} {#if day.events.length > maxEventsToShow}<li class={`italic text-[0.5rem] sm:text-[0.55rem] ${isDarkMode ? 'text-zinc-400' : 'text-gray-500'}`}>+{day.events.length - maxEventsToShow} more</li>{/if} </ul> {/if}
+                            {#if day.isCurrentMonth && day.events.length > 0} {@const maxEventsToShow = day.events.length > 2 ? 1 : 2} <ul class="mt-0.5 text-[0.5rem] sm:text-[0.6rem] md:text-[0.7rem] space-y-0.5 overflow-hidden flex-1 min-h-0"> {#each day.events.slice(0, maxEventsToShow) as event (event.id)} <li class={`truncate px-0.5 py-px sm:px-1 sm:py-0.5 rounded text-white leading-tight cursor-pointer hover:opacity-80 transition-opacity`} style="background-color: {event.color || (isDarkMode ? '#374151' : '#9CA3AF')};" on:mouseenter={(e) => openTaskDetailsPopover(event.id, e)} on:mouseleave={scheduleClosePopover} on:keydown|stopPropagation={(e) => { if (e.key === 'Enter' || e.key === ' ') openTaskDetailsPopover(event.id); }} tabindex="0" role="button" aria-label={`View details for ${event.title}`} title={event.title + (event.deadlineTime ? ` (DL: ${event.deadlineTime})` : '')}> {event.title} {#if event.deadlineTime}<span class="hidden sm:block text-[0.5rem] sm:text-[0.55rem] opacity-80">DL: {event.deadlineTime}</span>{/if} </li> {/each} {#if day.events.length > maxEventsToShow}<li class={`italic text-[0.5rem] sm:text-[0.55rem] ${isDarkMode ? 'text-zinc-400' : 'text-gray-500'}`}>+{day.events.length - maxEventsToShow} more</li>{/if} </ul> {/if}
                              <button on:click|stopPropagation={() => openAddEventForm(day.date)} class={`absolute bottom-0.5 right-0.5 sm:bottom-1 sm:right-1 p-0.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-150 focus:opacity-100 ${isDarkMode ? 'bg-blue-600 hover:bg-blue-500 text-white' : 'bg-blue-500 hover:bg-blue-600 text-white'}`} aria-label="Add event to this day"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-2 h-2 sm:w-2.5 sm:h-2.5 md:w-3 md:h-3"><path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" /></svg></button>
                         </div>
                     {/each}
@@ -474,6 +506,8 @@
     x={popoverX}
     y={popoverY}
     on:close={closeTaskDetailsPopover}
+    on:mouseenter={cancelClosePopover}
+    on:mouseleave={scheduleClosePopover}
   />
 
   <!-- Day Tasks Modal Component -->
@@ -483,8 +517,52 @@
     date={selectedDayDate}
     on:close={closeDayTasksModal}
     on:detailTask={(e) => {
-      // closeDayTasksModal(); // Removed: Do not close the day tasks modal when opening task details
-      openTaskDetailsPopover(e.detail.task.id, e.detail.event);
+      closeDayTasksModal();
+      openTaskDetailModal(e.detail.task);
+    }}
+  />
+
+  <!-- Task Detail Modal Component -->
+  <TaskDetailModal 
+    bind:isOpen={isTaskDetailModalOpen} 
+    task={selectedTaskForModal} 
+    {isDarkMode}
+    on:close={() => isTaskDetailModalOpen = false}
+    on:updated={async () => {
+        await invalidateAll();
+        isTaskDetailModalOpen = false;
+    }}
+    on:delete={async (event) => {
+        const taskIdToDelete = event.detail.taskId;
+        const formData = new FormData();
+        formData.append('taskId', taskIdToDelete);
+
+        try {
+            const response = await fetch('?/deleteTask', {
+                method: 'POST',
+                body: formData
+            });
+            const result = await response.json();
+            let parsedData = result;
+            if (typeof result.data === 'string') {
+                try {
+                    const tempParsed = JSON.parse(result.data);
+                    if (Array.isArray(tempParsed) && tempParsed.length > 0 && typeof tempParsed[0] === 'object') {
+                        parsedData = tempParsed[0];
+                    }
+                } catch (parseError) {
+                    console.error('Failed to parse result.data string:', parseError);
+                }
+            }
+            if (parsedData.deleteTaskForm?.error) {
+                console.error(`Error deleting task: ${parsedData.deleteTaskForm.error}`);
+            }
+            await invalidateAll();
+        } catch (error) {
+            console.error('Error deleting task:', error);
+        } finally {
+            isTaskDetailModalOpen = false;
+        }
     }}
   />
 </div>

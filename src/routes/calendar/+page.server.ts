@@ -268,5 +268,109 @@ export const actions: Actions = {
                 eventForm: { error: `Failed to add event: ${error.message || 'Server error'}`, title, description, eventDate, dueTime: deadlineTime, color }
             });
         }
+    },
+
+    updateTask: async ({ request, locals }) => {
+        const userId = locals.userId;
+        if (!userId) return fail(401, { taskForm: { error: 'User not authenticated.' } });
+        const formData = await request.formData();
+        const taskId = formData.get('taskId')?.toString();
+        if (!taskId) return fail(400, { taskForm: { error: 'Task ID is required.' } });
+
+        const title = formData.get('title')?.toString()?.trim();
+        const description = formData.get('description')?.toString()?.trim();
+        const priority = formData.get('priority')?.toString();
+        const dueDate = formData.get('dueDate')?.toString();
+        const dueTime = formData.get('dueTime')?.toString();
+        const isCompletedString = formData.get('isCompleted')?.toString();
+
+        if (!title && title !== undefined) {
+             return fail(400, { taskForm: { error: 'Task title is required.', taskId } });
+        }
+        
+        const taskUpdateData: Record<string, any> = { 
+            lastModified: FieldValue.serverTimestamp() 
+        };
+
+        if (title !== undefined) taskUpdateData.title = title;
+        if (description !== undefined) taskUpdateData.description = description;
+        if (priority !== undefined) taskUpdateData.priority = priority;
+
+        if (dueDate !== undefined) {
+            if (dueDate === null || dueDate === '') {
+                taskUpdateData.dueDate = null;
+            } else if (dueDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                taskUpdateData.dueDate = dueDate;
+            } else {
+                return fail(400, { taskForm: { error: 'Invalid due date format.', taskId } });
+            }
+            // Reset reminder flags when due date changes
+            taskUpdateData.reminderSent24hr = false;
+            taskUpdateData.emailReminderSent24hr = false;
+        }
+
+        if (dueTime !== undefined) {
+            if (dueTime === null || dueTime === '') {
+                taskUpdateData.dueTime = null;
+            } else if (dueTime.match(/^\d{2}:\d{2}$/)) {
+                taskUpdateData.dueTime = dueTime;
+            } else {
+                return fail(400, { taskForm: { error: 'Invalid due time format.', taskId } });
+            }
+        }
+        if (taskUpdateData.dueDate === null) {
+            taskUpdateData.dueTime = null;
+        }
+        
+        try {
+            const taskRef = adminDb.collection('tasks').doc(taskId);
+            const taskDoc = await taskRef.get();
+            if (!taskDoc.exists) return fail(404, { taskForm: { error: 'Task not found.' } });
+            if (taskDoc.data()?.userId !== userId) return fail(403, { taskForm: { error: 'Permission denied.' } });
+            
+            if (isCompletedString !== undefined) {
+                const newIsCompleted = isCompletedString === 'true';
+                taskUpdateData.isCompleted = newIsCompleted;
+                taskUpdateData.completedAt = newIsCompleted ? FieldValue.serverTimestamp() : null;
+            }
+
+            await taskRef.update(taskUpdateData);
+
+            const updatedTaskDoc = await taskRef.get();
+            const updatedTaskData = updatedTaskDoc.data();
+
+            return { 
+                taskForm: { 
+                    success: true, 
+                    message: 'Task updated successfully!',
+                    taskId: taskId,
+                    isCompleted: updatedTaskData?.isCompleted,
+                    dueDateISO: updatedTaskData?.dueDate,
+                    dueTime: updatedTaskData?.dueTime
+                } 
+            };
+        } catch (error: any) {
+            console.error(`[Action updateTask /calendar] ERROR for task ${taskId}:`, error);
+            return fail(500, { taskForm: { error: `Failed to update task: ${error.message}` } });
+        }
+    },
+
+    deleteTask: async ({ request, locals }) => {
+        const userId = locals.userId;
+        if (!userId) return fail(401, { deleteTaskForm: { error: 'User not authenticated.' } });
+        const formData = await request.formData();
+        const taskId = formData.get('taskId') as string;
+        if (!taskId) return fail(400, { deleteTaskForm: { error: 'Task ID is required.' } });
+        try {
+            const taskRef = adminDb.collection('tasks').doc(taskId);
+            const taskDoc = await taskRef.get();
+            if (!taskDoc.exists) return fail(404, { deleteTaskForm: { error: 'Task not found.' } });
+            if (taskDoc.data()?.userId !== userId) return fail(403, { deleteTaskForm: { error: 'Permission denied.' } });
+            await taskRef.delete();
+            return { deleteTaskForm: { successMessage: 'Task deleted successfully.' } };
+        } catch (error: any) {
+            console.error(`[Action deleteTask /calendar] ERROR for task ${taskId}:`, error);
+            return fail(500, { deleteTaskForm: { error: `Failed to delete task: ${error.message}` } });
+        }
     }
 };

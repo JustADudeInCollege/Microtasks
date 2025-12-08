@@ -280,8 +280,8 @@
 <main class={`flex flex-col justify-center items-center min-h-screen w-full relative overflow-hidden ${isDarkMode ? 'bg-zinc-900' : 'bg-gray-100'}`}>
     <!-- Background image -->
     <div 
-        class="absolute inset-0 z-0 bg-no-repeat bg-center"
-        style={`background-image: url('${isDarkMode ? '/Darkmode.png' : '/background.png'}'); background-size: 85%;`}
+        class="absolute inset-0 z-0 bg-cover bg-bottom bg-no-repeat"
+        style={`background-image: url('${isDarkMode ? '/Darkmode.png' : '/background.png'}');`}
     ></div>
     <img
         src={isDarkMode ? "/logonamindarkmode.png" : "/logonamin.png"}
@@ -311,7 +311,7 @@
         </div>
     {/if}
 
-    <div class={`p-6 md:p-8 rounded-lg shadow-2xl max-w-md w-[90%] md:w-full relative z-10 ${isDarkMode ? 'bg-zinc-800 border-zinc-700 text-zinc-100' : 'bg-white border border-gray-300'}`}>
+    <div class={`p-6 md:p-8 rounded-xl max-w-md w-[90%] md:w-full relative z-10 backdrop-blur-sm ${isDarkMode ? 'bg-zinc-800/95 border border-zinc-600 text-zinc-100 shadow-[0_8px_32px_rgba(0,0,0,0.5)]' : 'bg-white/95 border border-gray-200 shadow-[0_8px_32px_rgba(0,0,0,0.15)]'}`}>
         <h2 class="text-xl font-bold text-center mb-4">Log In</h2>
 
         {#if errorMessage}

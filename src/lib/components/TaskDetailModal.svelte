@@ -37,6 +37,21 @@
 
     // Track the task ID we've initialized the form for
     let initializedForTaskId: string | null = null;
+    
+    // Track the last opened task to reset edit mode when opening a different task
+    let lastOpenedTaskId: string | null = null;
+    
+    // Reset edit mode when modal opens with a new task
+    $: if (isOpen && task && task.id !== lastOpenedTaskId) {
+        isEditMode = false;
+        showDeleteConfirm = false;
+        lastOpenedTaskId = task.id;
+    }
+    
+    // Reset tracking when modal closes
+    $: if (!isOpen) {
+        lastOpenedTaskId = null;
+    }
 
     // Reactive statement to initialize edit form when entering edit mode for a new task
     $: if (task && isEditMode && initializedForTaskId !== task.id) {
@@ -278,8 +293,12 @@
 				{/if}
 
                 <div class="modal-actions">
-                    <button class="button-delete" on:click={promptDelete}>Delete Task</button>
-                    <button class="button-secondary" on:click={toggleEditMode}>Update Task</button>
+                    {#if userRole === 'owner' || userRole === 'admin'}
+                        <button class="button-delete" on:click={promptDelete}>Delete Task</button>
+                    {/if}
+                    {#if userRole !== 'viewer'}
+                        <button class="button-secondary" on:click={toggleEditMode}>Update Task</button>
+                    {/if}
                     <button class="button-primary" on:click={closeModalAndReset}>Close</button>
                 </div>
             {/if}
@@ -422,21 +441,27 @@
         background-color: var(--surface-light);
 		color: var(--text-light-primary);
     }
-    :global(body.dark) .edit-task-form .form-group input,
+    :global(body.dark) .edit-task-form .form-group input[type="text"],
+    :global(body.dark) .edit-task-form .form-group input[type="date"],
+    :global(body.dark) .edit-task-form .form-group input[type="time"],
     :global(body.dark) .edit-task-form .form-group textarea,
     :global(body.dark) .edit-task-form .form-group select {
         background-color: var(--bg-dark); /* Slightly different from surface for inputs */
         color: var(--text-dark-primary);
         border-color: var(--border-dark);
     }
-    .edit-task-form .form-group input:focus,
+    .edit-task-form .form-group input[type="text"]:focus,
+    .edit-task-form .form-group input[type="date"]:focus,
+    .edit-task-form .form-group input[type="time"]:focus,
     .edit-task-form .form-group textarea:focus,
     .edit-task-form .form-group select:focus {
         outline: none;
         border-color: var(--interactive-light);
         box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
     }
-    :global(body.dark) .edit-task-form .form-group input:focus,
+    :global(body.dark) .edit-task-form .form-group input[type="text"]:focus,
+    :global(body.dark) .edit-task-form .form-group input[type="date"]:focus,
+    :global(body.dark) .edit-task-form .form-group input[type="time"]:focus,
     :global(body.dark) .edit-task-form .form-group textarea:focus,
     :global(body.dark) .edit-task-form .form-group select:focus {
         border-color: var(--interactive-dark);
@@ -456,41 +481,47 @@
 
     /* Delete Confirmation Overlay */
     .delete-confirm-overlay {
-        position: absolute; /* Position within the modal-content */
+        position: fixed; /* Position over the entire viewport */
         top: 0; left: 0; right: 0; bottom: 0;
-        background-color: rgba(0,0,0,0.3); /* Slightly darker than main backdrop */
-        backdrop-filter: blur(2px);
+        background-color: rgba(0,0,0,0.6); /* Darker overlay for better visibility */
+        backdrop-filter: blur(3px);
         display: flex;
         justify-content: center;
         align-items: center;
-        z-index: 10; /* Above the edit form but below modal-close button if needed */
-        border-radius: 8px; /* Match parent modal content */
+        z-index: 1100; /* Above the modal backdrop (z-index: 1050) */
+        border-radius: 0; /* Full screen overlay, no border radius */
     }
     .delete-confirm-content {
-        background-color: var(--surface-light);
-        padding: 1.5rem;
-        border-radius: 6px;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        background-color: #ffffff;
+        padding: 1.5rem 2rem;
+        border-radius: 8px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.3);
         text-align: center;
         width: 90%;
         max-width: 400px;
+        border: 1px solid #e5e7eb;
     }
     :global(body.dark) .delete-confirm-content {
-        background-color: var(--surface-dark);
+        background-color: #1f2937;
+        border-color: #374151;
     }
     .delete-confirm-content h4 {
         margin-top: 0;
         margin-bottom: 0.75rem;
-        font-size: 1.1rem;
+        font-size: 1.25rem;
         font-weight: 600;
+        color: #111827;
+    }
+    :global(body.dark) .delete-confirm-content h4 {
+        color: #f9fafb;
     }
     .delete-confirm-content p {
         margin-bottom: 1.25rem;
-        font-size: 0.9em;
-        color: var(--text-light-secondary);
+        font-size: 0.95em;
+        color: #4b5563;
     }
     :global(body.dark) .delete-confirm-content p {
-        color: var(--text-dark-secondary);
+        color: #d1d5db;
     }
     .button-delete-confirm {
         background-color: #dc2626; /* Red */
