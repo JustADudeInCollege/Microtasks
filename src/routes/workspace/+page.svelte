@@ -586,7 +586,7 @@
 		<form method="POST" action="?/addBoard" use:enhance={() => {
             isSubmittingWorkspace = true;
             formActionError = null; 
-            return async ({ update }) => { await update(); };
+            return async ({ update }) => { await update({ reset: false }); };
         }}>
 			<div class="modal-form-group">
 				<label for="workspaceNameModalInput" class="modal-label">Workspace Name <span class="required-asterisk">*</span></label>
@@ -628,7 +628,7 @@
 		</div>
 		<form method="POST" action="?/deleteBoard" use:enhance={() => {
             isDeletingBoard = true;
-            return async ({ update }) => { await update(); };
+            return async ({ update }) => { await update({ reset: false }); };
         }}>
 			<input type="hidden" name="boardId" value={boardToConfirmDelete.id} />
 			<p class="modal-text-confirm">
@@ -697,7 +697,7 @@
 			isSubmittingTemplateWorkspace = true;
 			templateFormActionError = null;
 			templateFormSuccessMessage = null; 
-			return async ({ update }) => { await update(); };
+			return async ({ update }) => { await update({ reset: false }); };
 		}} class="modal-form-flex-grow">
 			<div class="modal-form-scrollable custom-scrollbar">
 				<p class="template-modal-goal"><strong class="font-medium">Template Goal:</strong> {selectedTemplateForUsage.goal}</p>
