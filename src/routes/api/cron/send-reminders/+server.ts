@@ -16,6 +16,20 @@ function getFormattedDateString(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
+// Helper function to convert 24h time (HH:MM) to 12h format (h:MM AM/PM)
+function formatTime12h(time24: string | null): string {
+  if (!time24 || !/^\d{2}:\d{2}$/.test(time24)) return 'end of day';
+  
+  const [hourStr, minute] = time24.split(':');
+  let hour = parseInt(hourStr, 10);
+  const ampm = hour >= 12 ? 'PM' : 'AM';
+  
+  if (hour === 0) hour = 12;
+  else if (hour > 12) hour -= 12;
+  
+  return `${hour}:${minute} ${ampm}`;
+}
+
 // Helper to get timezone offset in hours (e.g., "Asia/Manila" -> +8, "America/New_York" -> -5 or -4)
 function getTimezoneOffsetHours(timezone: string): number {
   try {
@@ -196,7 +210,7 @@ export const GET: RequestHandler = async ({ url }) => {
       const messagePayload = {
         notification: {
           title: `Task Reminder: ${taskTitle}`,
-          body: `Your task "${taskTitle}" is due in approx. ${Math.max(0, Math.round(hoursDifference))} hour(s) (at ${taskDueTimeStr || 'end of day'} on ${taskDueDateStr}).`,
+          body: `Your task "${taskTitle}" is due in approx. ${Math.max(0, Math.round(hoursDifference))} hour(s) (at ${formatTime12h(taskDueTimeStr)} on ${taskDueDateStr}).`,
           // icon: `${appBaseUrl}/favicon.png`, // Optional: URL to an icon
         },
         webpush: { 

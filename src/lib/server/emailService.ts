@@ -11,6 +11,20 @@ const transporter = nodemailer.createTransport({
   }
 });
 
+// Helper function to convert 24h time (HH:MM) to 12h format (h:MM AM/PM)
+function formatTime12h(time24: string): string {
+  if (!time24 || !/^\d{2}:\d{2}$/.test(time24)) return time24;
+  
+  const [hourStr, minute] = time24.split(':');
+  let hour = parseInt(hourStr, 10);
+  const ampm = hour >= 12 ? 'PM' : 'AM';
+  
+  if (hour === 0) hour = 12;
+  else if (hour > 12) hour -= 12;
+  
+  return `${hour}:${minute} ${ampm}`;
+}
+
 export interface TaskEmailData {
   taskTitle: string;
   taskDescription?: string;
@@ -29,7 +43,7 @@ export async function sendTaskReminderEmail(
     ? 'less than an hour' 
     : `approximately ${Math.round(task.hoursUntilDue)} hours`;
 
-  const dueTimeDisplay = task.dueTime || 'end of day';
+  const dueTimeDisplay = task.dueTime ? formatTime12h(task.dueTime) : 'end of day';
   
   const htmlContent = `
     <!DOCTYPE html>
