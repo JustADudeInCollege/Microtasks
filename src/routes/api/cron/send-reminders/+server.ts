@@ -30,39 +30,54 @@ function formatTime12h(time24: string | null): string {
   return `${hour}:${minute} ${ampm}`;
 }
 
-// Helper to get timezone offset in hours (e.g., "Asia/Manila" -> +8, "America/New_York" -> -5 or -4)
-function getTimezoneOffsetHours(timezone: string): number {
+// Helper to get timezone offset in minutes (more accurate than hours)
+function getTimezoneOffsetMinutes(timezone: string): number {
   try {
+    // Create a date and format it in both UTC and the target timezone
     const now = new Date();
-    // Get the offset by comparing UTC time with the timezone's local time
+    
+    // Get UTC components
+    const utcYear = now.getUTCFullYear();
+    const utcMonth = now.getUTCMonth();
+    const utcDate = now.getUTCDate();
+    const utcHours = now.getUTCHours();
+    const utcMinutes = now.getUTCMinutes();
+    
+    // Get the local time in the target timezone
     const formatter = new Intl.DateTimeFormat('en-US', {
       timeZone: timezone,
-      hour: 'numeric',
-      minute: 'numeric',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
       hour12: false,
     });
+    
     const parts = formatter.formatToParts(now);
-    const hour = parseInt(parts.find(p => p.type === 'hour')?.value || '0');
-    const minute = parseInt(parts.find(p => p.type === 'minute')?.value || '0');
+    const tzYear = parseInt(parts.find(p => p.type === 'year')?.value || '0');
+    const tzMonth = parseInt(parts.find(p => p.type === 'month')?.value || '1') - 1;
+    const tzDay = parseInt(parts.find(p => p.type === 'day')?.value || '1');
+    const tzHour = parseInt(parts.find(p => p.type === 'hour')?.value || '0');
+    const tzMinute = parseInt(parts.find(p => p.type === 'minute')?.value || '0');
     
-    const utcHour = now.getUTCHours();
-    const utcMinute = now.getUTCMinutes();
+    // Calculate total minutes for each
+    const utcTotalMinutes = ((utcYear * 365 + utcMonth * 30 + utcDate) * 24 * 60) + (utcHours * 60) + utcMinutes;
+    const tzTotalMinutes = ((tzYear * 365 + tzMonth * 30 + tzDay) * 24 * 60) + (tzHour * 60) + tzMinute;
     
-    let offsetHours = hour - utcHour + (minute - utcMinute) / 60;
+    const offsetMinutes = tzTotalMinutes - utcTotalMinutes;
     
-    // Handle day boundary
-    if (offsetHours > 12) offsetHours -= 24;
-    if (offsetHours < -12) offsetHours += 24;
+    console.log(`[Timezone] ${timezone}: UTC ${utcHours}:${utcMinutes}, Local ${tzHour}:${tzMinute}, offset=${offsetMinutes}min`);
     
-    return offsetHours;
+    return offsetMinutes;
   } catch (e) {
     console.warn(`[Timezone] Failed to parse timezone "${timezone}", defaulting to UTC`);
-    return 0; // Default to UTC
+    return 0;
   }
 }
 
 // Convert a date string (YYYY-MM-DD) and time string (HH:MM) in user's timezone to UTC Date
-function parseUserLocalDateTime(dateStr: string, timeStr: string | null, timezoneOffsetHours: number): Date {
+function parseUserLocalDateTime(dateStr: string, timeStr: string | null, timezoneOffsetMinutes: number): Date {
   const [year, month, day] = dateStr.split('-').map(Number);
   let hours = 23, minutes = 59, seconds = 59; // Default to end of day
   
@@ -71,11 +86,29 @@ function parseUserLocalDateTime(dateStr: string, timeStr: string | null, timezon
     seconds = 0;
   }
   
-  // Create UTC date, then subtract the timezone offset to get the correct UTC time
-  // If user is at UTC+8 and says "14:00", the UTC time is 14:00 - 8 = 06:00 UTC
-  const utcHours = hours - timezoneOffsetHours;
+  // Convert local time to UTC by subtracting the offset
+  // User's local time - offset = UTC time
+  // e.g., 21:00 Manila (UTC+8, offset=+480min) -> 21:00 - 480min = 13:00 UTC
+  const localTotalMinutes = hours * 60 + minutes;
+  const utcTotalMinutes = localTotalMinutes - timezoneOffsetMinutes;
   
-  return new Date(Date.UTC(year, month - 1, day, utcHours, minutes, seconds));
+  const utcHours = Math.floor(utcTotalMinutes / 60);
+  const utcMinutes = utcTotalMinutes % 60;
+  
+  // Handle day overflow/underflow
+  let adjustedDay = day;
+  let adjustedHours = utcHours;
+  if (utcHours < 0) {
+    adjustedHours = utcHours + 24;
+    adjustedDay = day - 1;
+  } else if (utcHours >= 24) {
+    adjustedHours = utcHours - 24;
+    adjustedDay = day + 1;
+  }
+  
+  const result = new Date(Date.UTC(year, month - 1, adjustedDay, adjustedHours, utcMinutes, seconds));
+  console.log(`[parseUserLocalDateTime] ${dateStr} ${timeStr || '23:59'} (offset ${timezoneOffsetMinutes}min) -> UTC ${result.toISOString()}`);
+  return result;
 }
 
 export const GET: RequestHandler = async ({ url }) => {
@@ -145,13 +178,13 @@ export const GET: RequestHandler = async ({ url }) => {
       const userEmail = userCredDoc.exists ? userCredDoc.data()?.email : null;
       
       // Get timezone offset for this user
-      const timezoneOffsetHours = getTimezoneOffsetHours(userTimezone);
-      console.log(`[API /send-reminders] User ${userId} timezone: ${userTimezone} (offset: ${timezoneOffsetHours}h)`);
+      const timezoneOffsetMinutes = getTimezoneOffsetMinutes(userTimezone);
+      console.log(`[API /send-reminders] User ${userId} timezone: ${userTimezone} (offset: ${timezoneOffsetMinutes}min / ${(timezoneOffsetMinutes/60).toFixed(1)}h)`);
 
       // Construct precise due date/time for the task in UTC
       let taskDueDateTimeUTC: Date;
       try {
-        taskDueDateTimeUTC = parseUserLocalDateTime(taskDueDateStr, taskDueTimeStr, timezoneOffsetHours);
+        taskDueDateTimeUTC = parseUserLocalDateTime(taskDueDateStr, taskDueTimeStr, timezoneOffsetMinutes);
       } catch (e) {
         console.warn(`[API /send-reminders] Could not parse dueDate/dueTime for task ${taskDoc.id} ('${taskDueDateStr}' '${taskDueTimeStr}'). Skipping.`, e);
         continue;
@@ -159,6 +192,8 @@ export const GET: RequestHandler = async ({ url }) => {
       
       const timeDifferenceMs = taskDueDateTimeUTC.getTime() - now.getTime();
       const hoursDifference = timeDifferenceMs / (1000 * 60 * 60);
+      
+      console.log(`[API /send-reminders] Task "${taskTitle}": Due UTC=${taskDueDateTimeUTC.toISOString()}, Now UTC=${now.toISOString()}, Diff=${hoursDifference.toFixed(2)}h`);
 
       // Check if due within the next 24 hours (and not past due by more than, e.g., 1 hour for cron processing delay)
       if (hoursDifference > -1 && hoursDifference <= 24) {
