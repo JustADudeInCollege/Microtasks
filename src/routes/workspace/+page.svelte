@@ -27,6 +27,7 @@
 	let isDarkMode = false; // This will be set by onMount from localStorage or system
 	let currentDateTime = "";
 	let dateTimeInterval: ReturnType<typeof setInterval> | null = null;
+	let showLogoutConfirm = false;
 	$: currentPath = $page.url.pathname;
 
 	function getStoredUsername(): string {
@@ -48,11 +49,20 @@
 	}
 
 	function handleLogout() {
+		showLogoutConfirm = true;
+	}
+
+	function confirmLogout() {
+		showLogoutConfirm = false;
 		if (browser) {
 			localStorage.removeItem('microtask_username');
 			document.cookie = "userId=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; SameSite=Lax;";
 			goto('/login'); 
 		}
+	}
+
+	function cancelLogout() {
+		showLogoutConfirm = false;
 	}
 
     // Adapted from example
@@ -644,6 +654,33 @@
 </div>
 {/if}
 
+{#if showLogoutConfirm}
+<div class="modal-overlay" id="logoutModalOverlay" on:click|self={cancelLogout} on:keydown={(e) => e.key === 'Escape' && cancelLogout()} role="dialog" aria-modal="true">
+	<div class="modal-content">
+		<div class="modal-header">
+			<h3 class="modal-title">Confirm Logout</h3>
+			<button on:click={cancelLogout} class="modal-close-button">
+				<span>×</span>
+			</button>
+		</div>
+		<p class="modal-text-confirm">
+			Are you sure you want to log out?
+		</p>
+		<p class="modal-text-secondary">
+			You will need to sign in again to access your tasks.
+		</p>
+		<div class="modal-actions">
+			<button type="button" on:click={cancelLogout} class="button button-default">
+				Cancel
+			</button>
+			<button type="button" on:click={confirmLogout} class="button button-danger">
+				Log out
+			</button>
+		</div>
+	</div>
+</div>
+{/if}
+
 {#if showTemplateUsageModal && selectedTemplateForUsage}
 <div class="modal-overlay" id="templateUsageModalOverlay">
 	<div id="templateUsageModalContent" class="modal-content modal-content-large">
@@ -1046,13 +1083,16 @@
 .logout-button { /* Added this class to button in HTML */
     display: flex; align-items: center;
     gap: var(--space-3); 
-    padding: var(--space-2) var(--space-3); 
+    padding: var(--space-3) var(--space-3); 
     border-radius: var(--rounded-md);
     font-weight: 600; /* font-semibold */
     width: 100%; /* w-full */
     margin-top: auto; /* mt-auto */
     transition: background-color var(--transition-duration), color var(--transition-duration);
     background-color: transparent; border: none; cursor: pointer; text-align: left;
+    font-size: 0.95rem;
+    min-height: 44px; /* Minimum touch target size */
+    box-sizing: border-box;
      /* Light: text-gray-700 */
     color: var(--light-text-secondary);
 }
@@ -1446,6 +1486,8 @@
 :global(body.dark) .modal-title-danger { color: var(--dark-accent-danger); }
 .modal-text-confirm { color: var(--light-text-secondary); margin-bottom: var(--space-2); font-size: 1rem; }
 :global(body.dark) .modal-text-confirm { color: var(--dark-text-secondary); }
+.modal-text-secondary { color: var(--light-text-tertiary); margin-bottom: var(--space-6); font-size: 0.9rem; }
+:global(body.dark) .modal-text-secondary { color: var(--dark-text-tertiary); }
 .modal-text-warning {
     font-size: 0.9rem; color: var(--light-accent-danger-text);
     background-color: var(--light-accent-danger-bg);
