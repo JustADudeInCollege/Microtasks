@@ -30,6 +30,7 @@
   let isDarkMode = false;
   let currentDateTime = "";
   let dateTimeInterval: ReturnType<typeof setInterval> | null = null;
+  let handleTaskDeletedListener: ((e: Event) => void) | null = null;
 
   let currentYear = new Date().getFullYear();
   let currentMonth = new Date().getMonth();
@@ -344,12 +345,26 @@
         updateCalendarDays();
     }
 
+    // Listen for global task-deleted events and perform a full reload (F5-like)
+    handleTaskDeletedListener = (evt: Event) => {
+      try {
+        console.log('[Calendar] Received microtask:task-deleted — performing full reload');
+        if (typeof window !== 'undefined' && window.location) {
+          window.location.reload();
+        }
+      } catch (err) {
+        console.error('[Calendar] Error during task-deleted handler (reload):', err);
+      }
+    };
+    if (typeof window !== 'undefined') window.addEventListener('microtask:task-deleted', handleTaskDeletedListener as EventListener);
+
     return () => {
       clearInterval(intervalId);
       if (dateTimeInterval) clearInterval(dateTimeInterval);
       document.removeEventListener('click', handleGlobalClick);
       // Remove keydown listener with useCapture = true
       document.removeEventListener('keydown', handleEscKey, true);
+      if (handleTaskDeletedListener) window.removeEventListener('microtask:task-deleted', handleTaskDeletedListener as EventListener);
       if (successMessageTimeoutId) clearTimeout(successMessageTimeoutId);
     };
   });

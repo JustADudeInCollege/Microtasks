@@ -938,16 +938,23 @@
         // --- Server Action (if needed and confirmed) ---
         if (performOptimisticUpdateAndServerCall) {
             isLoadingOperation = true;
-            const formDataForServer = new FormData();
+                const formDataForServer = new FormData();
             formDataForServer.append('taskId', taskInFlatList.id);
             formDataForServer.append('isCompleted', String(newIsCompletedStateForOptimisticUpdate)); 
-            // Only append due date/time if they actually changed or if it's a new task
-            if (newDueDateISO !== originalDueDateISO || newDueTime !== originalDueTime) {
-                formDataForServer.append('dueDateISO', newDueDateISO || '');
-                formDataForServer.append('dueTime', newDueTime || '');
-            }
+            // Always send due date/time when performing an update (covers overdue -> pending flow)
+            // Server-side `updateTask` expects the keys `dueDate` and `dueTime` (not `dueDateISO`).
+            // Send `dueDate` so the server will apply the update to Firestore.
+            formDataForServer.append('dueDate', newDueDateISO ?? '');
+            formDataForServer.append('dueTime', newDueTime ?? '');
 
             try {
+                // Debug: log the FormData being sent so we can verify dueDate/dueTime/isCompleted
+                try {
+                    const fdEntries = Array.from(formDataForServer.entries());
+                    console.log('Sending updateTask FormData entries:', fdEntries);
+                } catch (logErr) {
+                    console.log('Could not enumerate FormData entries for logging:', logErr);
+                }
                 const response = await fetch('?/updateTask', { method: 'POST', body: formDataForServer });
                 if (!response.ok) {
                     const result = await response.json().catch(() => ({ updateTaskForm: { error: "Failed to parse server error" }}));
