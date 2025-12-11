@@ -229,7 +229,7 @@ export async function sendDailySummaryEmail(
               📅 Your Daily Task Summary
             </h1>
             <p style="color: rgba(255,255,255,0.9); margin: 10px 0 0 0; font-size: 16px;">
-              You have <strong>${taskCount} ${taskWord}</strong> due today
+              You have <strong>${taskCount} ${taskWord}</strong> due soon
             </p>
           </div>
           
@@ -278,7 +278,7 @@ export async function sendDailySummaryEmail(
   const textContent = `
 Good morning ${userName}!
 
-You have ${taskCount} ${taskWord} due today. Here's your summary:
+You have ${taskCount} ${taskWord} due soon. Here's your summary:
 
 ${taskListText}
 
@@ -292,7 +292,7 @@ You've got this!
     await transporter.sendMail({
       from: `"Microtask" <${GMAIL_USER}>`,
       to: toEmail,
-      subject: `📅 Daily Summary: ${taskCount} ${taskWord} due today`,
+      subject: `📅 Daily Summary: ${taskCount} ${taskWord} due soon`,
       text: textContent,
       html: htmlContent
     });
