@@ -30,6 +30,16 @@ export interface DashboardStats {
     tasksDoneOnTime: number;
     tasksDoneLate: number;
     priorityCounts: Record<string, number>; // e.g., { high: 10, standard: 25, low: 5, unprioritized: 2 }
+    // New engaging stats
+    totalTasks: number;
+    pendingTasks: number;
+    overdueTasks: number;
+    tasksDueToday: number;
+    tasksDoneToday: number;
+    productivityScore: number; // 0-100
+    currentStreak: number; // consecutive days with completed tasks
+    completionRate: number; // percentage of completed vs total
+    avgTasksPerDay: number; // average tasks completed per day this week
 }
 
 interface UserForFrontend {
@@ -134,48 +144,72 @@ export const load = async ({ locals }: Parameters<PageServerLoad>[0]) => {
         tasksDoneOnTime: 0,
         tasksDoneLate: 0,
         priorityCounts: { high: 0, standard: 0, low: 0, unprioritized: 0 },
+        // New stats
+        totalTasks: 0,
+        pendingTasks: 0,
+        overdueTasks: 0,
+        tasksDueToday: 0,
+        tasksDoneToday: 0,
+        productivityScore: 0,
+        currentStreak: 0,
+        completionRate: 0,
+        avgTasksPerDay: 0,
     };
 
-    if (!pageLoadError) { 
+    if (!pageLoadError) {
         try {
             const tasksSnapshot = await adminDb.collection('tasks')
                 .where('userId', '==', userId)
                 .get();
 
             const now = new Date();
-            const startOfThisWeek = getStartOfWeek(now, 1); 
+            const startOfToday = getStartOfDay(now);
+            const endOfToday = getEndOfDay(now);
+            const startOfThisWeek = getStartOfWeek(now, 1);
             const endOfThisWeek = getEndOfWeek(now, 1);
             const startOfThisMonth = getStartOfMonth(now);
             const endOfThisMonth = getEndOfMonth(now);
 
+            // For today's date in YYYY-MM-DD format (Philippines timezone)
+            const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+            // For streak calculation: collect completion dates
+            const completionDates = new Set<string>();
+
             tasksSnapshot.docs.forEach(doc => {
                 const task = doc.data() as FetchedTaskData;
+                dashboardStats.totalTasks++;
 
                 const priority = task.priority?.toLowerCase() || 'unprioritized';
                 if (dashboardStats.priorityCounts.hasOwnProperty(priority)) {
                     dashboardStats.priorityCounts[priority]++;
                 } else {
-                     dashboardStats.priorityCounts.unprioritized++;
+                    dashboardStats.priorityCounts.unprioritized++;
                 }
 
+                const preciseDueDateUTC = getPreciseDueDateInTimezoneAsUTC(
+                    task.dueDate || null,
+                    task.dueTime || null,
+                    PHILIPPINES_TIMEZONE_OFFSET_HOURS
+                );
 
                 if (task.isCompleted && task.completedAt) {
                     dashboardStats.tasksDoneAllTime++;
-                    // task.completedAt is a Firestore Timestamp, so .toDate() is valid
-                    const completedAtDate = task.completedAt.toDate(); 
+                    const completedAtDate = task.completedAt.toDate();
 
+                    // Track completion dates for streak
+                    const completedDateStr = `${completedAtDate.getFullYear()}-${String(completedAtDate.getMonth() + 1).padStart(2, '0')}-${String(completedAtDate.getDate()).padStart(2, '0')}`;
+                    completionDates.add(completedDateStr);
+
+                    if (completedAtDate >= startOfToday && completedAtDate <= endOfToday) {
+                        dashboardStats.tasksDoneToday++;
+                    }
                     if (completedAtDate >= startOfThisWeek && completedAtDate <= endOfThisWeek) {
                         dashboardStats.tasksDoneThisWeek++;
                     }
                     if (completedAtDate >= startOfThisMonth && completedAtDate <= endOfThisMonth) {
                         dashboardStats.tasksDoneThisMonth++;
                     }
-
-                    const preciseDueDateUTC = getPreciseDueDateInTimezoneAsUTC(
-                        task.dueDate || null,
-                        task.dueTime || null,
-                        PHILIPPINES_TIMEZONE_OFFSET_HOURS
-                    );
 
                     if (preciseDueDateUTC) {
                         if (completedAtDate.getTime() <= preciseDueDateUTC.getTime()) {
@@ -184,12 +218,59 @@ export const load = async ({ locals }: Parameters<PageServerLoad>[0]) => {
                             dashboardStats.tasksDoneLate++;
                         }
                     } else if (task.dueDate === null || task.dueDate === undefined) {
-                        // If there's no due date, consider it "on time" as there was no deadline.
-                        // Or you might choose to categorize these differently.
                         dashboardStats.tasksDoneOnTime++;
+                    }
+                } else {
+                    // Not completed - check if pending or overdue
+                    dashboardStats.pendingTasks++;
+
+                    if (task.dueDate === todayStr) {
+                        dashboardStats.tasksDueToday++;
+                    }
+
+                    if (preciseDueDateUTC && now.getTime() > preciseDueDateUTC.getTime()) {
+                        dashboardStats.overdueTasks++;
                     }
                 }
             });
+
+            // Calculate streak (consecutive days with completed tasks going backwards from today)
+            let streak = 0;
+            let checkDate = new Date(now);
+            while (true) {
+                const checkDateStr = `${checkDate.getFullYear()}-${String(checkDate.getMonth() + 1).padStart(2, '0')}-${String(checkDate.getDate()).padStart(2, '0')}`;
+                if (completionDates.has(checkDateStr)) {
+                    streak++;
+                    checkDate.setDate(checkDate.getDate() - 1);
+                } else if (streak === 0 && checkDate.getTime() === startOfToday.getTime()) {
+                    // Today hasn't had a completion yet, check yesterday
+                    checkDate.setDate(checkDate.getDate() - 1);
+                } else {
+                    break;
+                }
+                // Safety limit
+                if (streak > 365) break;
+            }
+            dashboardStats.currentStreak = streak;
+
+            // Calculate completion rate
+            if (dashboardStats.totalTasks > 0) {
+                dashboardStats.completionRate = Math.round((dashboardStats.tasksDoneAllTime / dashboardStats.totalTasks) * 100);
+            }
+
+            // Calculate average tasks per day this week
+            const daysElapsedThisWeek = Math.max(1, Math.ceil((now.getTime() - startOfThisWeek.getTime()) / (1000 * 60 * 60 * 24)));
+            dashboardStats.avgTasksPerDay = Math.round((dashboardStats.tasksDoneThisWeek / daysElapsedThisWeek) * 10) / 10;
+
+            // Calculate productivity score (0-100)
+            // Factors: on-time rate (40%), streak (20%), completion rate (20%), tasks done today (20%)
+            const onTimeRate = dashboardStats.tasksDoneAllTime > 0
+                ? (dashboardStats.tasksDoneOnTime / dashboardStats.tasksDoneAllTime) * 40
+                : 20;
+            const streakScore = Math.min(streak, 7) / 7 * 20; // Cap at 7 days for max points
+            const completionScore = dashboardStats.completionRate / 100 * 20;
+            const todayScore = Math.min(dashboardStats.tasksDoneToday, 5) / 5 * 20; // Cap at 5 tasks
+            dashboardStats.productivityScore = Math.round(onTimeRate + streakScore + completionScore + todayScore);
 
         } catch (dbFetchError: any) {
             console.error(`[Dashboard Load] Error fetching tasks for user ${userId}:`, dbFetchError);

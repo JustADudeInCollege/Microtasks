@@ -1,0 +1,85 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ==================== EXISTING RULES ====================
+    
+    // Users collection (for fcmTokens and potentially other user-specific data)
+    match /users/{userId} {
+      // Allow a user to read and write to their own document or subcollections
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+
+      // fcmTokens subcollection: Stores FCM registration tokens for a user.
+      match /fcmTokens/{tokenId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+    }
+
+    // Counters collection: Used for generating user IDs during signup.
+    match /counters/credentials {
+      allow read, write: if true;
+    }
+
+    // Credentials collection: Stores user login info.
+    match /credentials/{userId} {
+      allow create: if true;
+      allow read: if true;
+      allow update: if true;
+
+      // Notes subcollection: Stores notes specific to a user.
+      match /notes/{noteId} {
+        allow read, write: if true;
+      }
+    }
+
+    // Notes collection: Stores notes, each linked to a user via a 'userId' field.
+    match /notes/{noteId} {
+      allow create: if request.auth.uid == request.resource.data.userId;
+      allow read, update, delete: if request.auth.uid == resource.data.userId;
+    }
+
+    // ==================== NEW RULES FOR REAL-TIME NOTIFICATIONS ====================
+    
+    // Tasks - users can read/write their own tasks
+    match /tasks/{taskId} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // User notifications - allow authenticated users to read (query filters by userId)
+    match /user_notifications/{notificationId} {
+      allow read: if request.auth != null;
+      allow update, delete: if request.auth != null && resource.data.userId == request.auth.uid;
+    }
+    
+    // Workspace invitations - users can read invitations sent to their email (for onSnapshot)
+    match /workspace_invitations/{invitationId} {
+      allow read: if request.auth != null;
+      allow update: if request.auth != null;
+    }
+    
+    // Workspaces - accessible by members
+    match /workspaces/{workspaceId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+    }
+    
+    // Workspace members
+    match /workspace_members/{memberId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+    }
+    
+    // Task assignments
+    match /task_assignments/{assignmentId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+    }
+    
+    // Activity log
+    match /activity_log/{logId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+    }
+  }
+}

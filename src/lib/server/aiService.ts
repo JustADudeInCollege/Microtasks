@@ -9,8 +9,8 @@ export interface AiGeneratedTask {
 }
 
 export interface OriginalTemplateStep {
-    text: string;
-    userInput?: string;
+  text: string;
+  userInput?: string;
 }
 
 // Helper function to delay execution
@@ -53,14 +53,14 @@ export async function getChatCompletion(messages: ChatMessageForAPI[], throwOnEr
     if (!res.ok) {
       const errorText = await res.text();
       console.error(`Groq API error: ${res.status} - ${errorText}`);
-      
+
       if (res.status === 429) {
         // Try to get retry time from headers
         const retryAfter = res.headers.get('Retry-After') || res.headers.get('x-ratelimit-reset-requests');
         const waitTime = retryAfter ? `${retryAfter} seconds` : 'a minute';
         throw new Error(`RATE_LIMITED:${waitTime}`);
       }
-      
+
       if (throwOnError) {
         throw new Error(`API error ${res.status}: ${errorText}`);
       }
@@ -70,9 +70,9 @@ export async function getChatCompletion(messages: ChatMessageForAPI[], throwOnEr
     const data = await res.json();
     const content = data.choices?.[0]?.message?.content;
     if (content) return content;
-    
+
     return null;
-    
+
   } catch (err: any) {
     console.error(`Groq fetch error:`, err);
     if (err.message?.startsWith('RATE_LIMITED') || throwOnError) {
@@ -82,13 +82,176 @@ export async function getChatCompletion(messages: ChatMessageForAPI[], throwOnEr
   }
 }
 
+// Interface for parsed task from natural language
+export interface ParsedTask {
+  title: string;
+  description?: string;
+  dueDate?: string; // ISO format YYYY-MM-DD
+  dueTime?: string; // HH:MM format
+  priority?: 'low' | 'standard' | 'high' | 'urgent';
+  category?: string;
+  estimatedMinutes?: number;
+}
+
+// Parse natural language into a structured task
+export async function parseNaturalLanguageTask(input: string, currentDate: string): Promise<ParsedTask | null> {
+  const prompt = `You are a task parsing AI. Parse the following natural language input into a structured task.
+
+Current date: ${currentDate}
+
+User input: "${input}"
+
+Extract the following information:
+- title: A concise task title (required)
+- description: Additional details if mentioned (optional)
+- dueDate: Date in YYYY-MM-DD format. Interpret relative dates like "tomorrow", "next Monday", "in 3 days", "friday" based on current date ${currentDate}
+- dueTime: Time in HH:MM 24-hour format if mentioned (e.g., "3pm" = "15:00", "9am" = "09:00")
+- priority: One of "low", "standard", "high", "urgent" based on keywords like "important", "urgent", "ASAP", "whenever", etc. Default to "standard"
+- category: Infer a category like "Work", "Personal", "Health", "Study", "Shopping", etc. based on content
+- estimatedMinutes: Estimated time to complete if mentioned or inferable
+
+Respond with ONLY a valid JSON object, no markdown, no explanation. Example:
+{"title":"Call dentist","description":"Schedule annual checkup","dueDate":"2024-01-15","dueTime":"15:00","priority":"standard","category":"Health","estimatedMinutes":15}
+
+If the input is too vague or not a task, respond with: {"error":"Could not parse as a task"}`;
+
+  try {
+    const response = await getOpenRouterCompletion(prompt, true);
+    if (!response) return null;
+
+    // Clean the response and parse JSON
+    const cleanedResponse = response.trim().replace(/```json\n?/g, '').replace(/```\n?/g, '');
+    const parsed = JSON.parse(cleanedResponse);
+
+    if (parsed.error) {
+      console.log('NLP parse error:', parsed.error);
+      return null;
+    }
+
+    return {
+      title: parsed.title || input,
+      description: parsed.description,
+      dueDate: parsed.dueDate,
+      dueTime: parsed.dueTime,
+      priority: parsed.priority || 'standard',
+      category: parsed.category,
+      estimatedMinutes: parsed.estimatedMinutes
+    };
+  } catch (err) {
+    console.error('Error parsing natural language task:', err);
+    return null;
+  }
+}
+
+// Suggest priority for a task based on its content
+export async function suggestTaskPriority(title: string, description: string = '', dueDate?: string): Promise<'low' | 'standard' | 'high' | 'urgent'> {
+  const today = new Date().toISOString().split('T')[0];
+  const prompt = `Analyze this task and suggest a priority level.
+
+Task Title: "${title}"
+Description: "${description}"
+Due Date: ${dueDate || 'Not specified'}
+Today's Date: ${today}
+
+Consider:
+- Urgency based on due date (if due soon, higher priority)
+- Keywords suggesting importance (urgent, ASAP, important, critical)
+- Keywords suggesting low priority (whenever, eventually, someday)
+- Nature of the task (health/safety = higher, entertainment = lower)
+
+Respond with ONLY one word: "low", "standard", "high", or "urgent"`;
+
+  try {
+    const response = await getOpenRouterCompletion(prompt);
+    if (!response) return 'standard';
+
+    const priority = response.trim().toLowerCase();
+    if (['low', 'standard', 'high', 'urgent'].includes(priority)) {
+      return priority as 'low' | 'standard' | 'high' | 'urgent';
+    }
+    return 'standard';
+  } catch {
+    return 'standard';
+  }
+}
+
+// Suggest category for a task based on its content
+export async function suggestTaskCategory(title: string, description: string = ''): Promise<string> {
+  const prompt = `Categorize this task into ONE of these categories:
+- Work
+- Personal
+- Health
+- Study
+- Shopping
+- Finance
+- Home
+- Social
+- Travel
+- Other
+
+Task Title: "${title}"
+Description: "${description}"
+
+Respond with ONLY the category name, nothing else.`;
+
+  try {
+    const response = await getOpenRouterCompletion(prompt);
+    if (!response) return 'Personal';
+
+    const category = response.trim();
+    const validCategories = ['Work', 'Personal', 'Health', 'Study', 'Shopping', 'Finance', 'Home', 'Social', 'Travel', 'Other'];
+
+    // Find matching category (case-insensitive)
+    const match = validCategories.find(c => c.toLowerCase() === category.toLowerCase());
+    return match || 'Personal';
+  } catch {
+    return 'Personal';
+  }
+}
+
+// Break down a large task into subtasks
+export async function breakdownTask(title: string, description: string = ''): Promise<{ title: string, description: string }[]> {
+  const prompt = `Break down this task into 3-6 smaller, actionable subtasks.
+
+Main Task: "${title}"
+Description: "${description}"
+
+Generate subtasks that are:
+- Specific and actionable
+- Progressive (can be done in order)
+- Together complete the main task
+
+Respond with ONLY a JSON array of objects with "title" and "description" fields. No markdown.
+Example: [{"title":"Research options","description":"Look up available choices"},{"title":"Compare prices","description":"Create a comparison spreadsheet"}]`;
+
+  try {
+    const response = await getOpenRouterCompletion(prompt, true);
+    if (!response) return [];
+
+    const cleanedResponse = response.trim().replace(/```json\n?/g, '').replace(/```\n?/g, '');
+    const parsed = JSON.parse(cleanedResponse);
+
+    if (Array.isArray(parsed)) {
+      return parsed.map(item => ({
+        title: String(item.title || ''),
+        description: String(item.description || '')
+      })).filter(item => item.title);
+    }
+    return [];
+  } catch (err) {
+    console.error('Error breaking down task:', err);
+    return [];
+  }
+}
+
 // Ensure 'export' is present
 export async function generateEntirePlanWithAI(
   workspaceName: string,
   templateTitle: string,
   templateGoal: string,
   originalStepsWithUserInput: OriginalTemplateStep[],
-  generalProjectNotes: string
+  generalProjectNotes: string,
+  pdfContextString: string = ""
 ): Promise<AiGeneratedTask[]> {
 
   const formattedOriginalSteps = originalStepsWithUserInput.map((step, i) =>
@@ -98,13 +261,13 @@ export async function generateEntirePlanWithAI(
   const initialSeedTopic = originalStepsWithUserInput.find(step => step.userInput)?.userInput || originalStepsWithUserInput[0]?.text || "the general theme";
 
   const isSkillLearning = templateGoal.toLowerCase().includes("learn") ||
-                         templateGoal.toLowerCase().includes("fluent") ||
-                         templateGoal.toLowerCase().includes("skill") ||
-                         templateGoal.toLowerCase().includes("master") ||
-                         (initialSeedTopic && (initialSeedTopic.toLowerCase().includes("language") ||
-                                               initialSeedTopic.toLowerCase().includes("speak") ||
-                                               initialSeedTopic.toLowerCase().includes("learn") ||
-                                               initialSeedTopic.toLowerCase().includes("study")));
+    templateGoal.toLowerCase().includes("fluent") ||
+    templateGoal.toLowerCase().includes("skill") ||
+    templateGoal.toLowerCase().includes("master") ||
+    (initialSeedTopic && (initialSeedTopic.toLowerCase().includes("language") ||
+      initialSeedTopic.toLowerCase().includes("speak") ||
+      initialSeedTopic.toLowerCase().includes("learn") ||
+      initialSeedTopic.toLowerCase().includes("study")));
 
   let specificInstructionsForAI = "";
   if (isSkillLearning) {
@@ -147,11 +310,13 @@ Workspace Name: "${workspaceName}"
 Based on Template: "${templateTitle}"
 Overall Goal of this Plan: "${templateGoal}"
 General Notes from User for the Entire Plan: "${generalProjectNotes || 'None provided'}"
+PDF Context (Reference Material): "${pdfContextString ? pdfContextString.substring(0, 15000) : 'None provided'}"
 
 The original template provides the following structural steps as a guideline, some with initial user input from the user who wants to achieve the overall goal:
 ${formattedOriginalSteps}
 
 Your main task is to expand on these original steps, using the initial user input (especially for the first prompted step, currently focused on "${initialSeedTopic}") as the central theme or starting point.
+CRITICAL: If "PDF Context" is provided above, you MUST prioritize it as your primary source of truth. Use the specific details, syllabus, or project requirements found in the PDF text to generate highly specific tasks that match the document's content.
 Generate a sequence of approximately ${originalStepsWithUserInput.length} to ${Math.max(originalStepsWithUserInput.length, originalStepsWithUserInput.length + 3)} tasks that cover the original template's structure.
 These tasks **must be progressive**, meaning each task should logically build upon the previous one, increasing in complexity or scope, and leading towards the overall goal.
 The **final task must be a meaningful concluding action or deliverable for THIS specific plan**, not generic advice like "review progress" or "set new goals". It should feel like a natural culmination of the preceding tasks.
@@ -196,8 +361,8 @@ Full response example (ensure the final task is conclusive and not generic):
   console.log("-----------------------------------------------------");
 
   const fallbackTasks: AiGeneratedTask[] = originalStepsWithUserInput.map(step => ({
-      title: `Task (AI Fallback): ${step.text}${step.userInput ? ` (Details: ${step.userInput.substring(0,40)}...)` : ''}`,
-      description: `(AI processing issue for plan) Please manually complete the objectives for: "${step.text}". Consider the overall goal: "${templateGoal}" and any general notes: "${generalProjectNotes || 'N/A'}". ${step.userInput ? `Your input for this part was: "${step.userInput}"` : ''}`
+    title: `Task (AI Fallback): ${step.text}${step.userInput ? ` (Details: ${step.userInput.substring(0, 40)}...)` : ''}`,
+    description: `(AI processing issue for plan) Please manually complete the objectives for: "${step.text}". Consider the overall goal: "${templateGoal}" and any general notes: "${generalProjectNotes || 'N/A'}". ${step.userInput ? `Your input for this part was: "${step.userInput}"` : ''}`
   }));
 
   if (!aiResponseString) {
@@ -208,26 +373,26 @@ Full response example (ensure the final task is conclusive and not generic):
   try {
     const jsonMatch = aiResponseString.match(/(\[[\s\S]*?\])/);
     if (jsonMatch && jsonMatch[0]) {
-        const cleanedJsonString = jsonMatch[0];
-        console.log("-----------------------------------------------------");
-        console.log("CLEANED JSON STRING (extracted by regex):");
-        console.log(cleanedJsonString);
-        console.log("-----------------------------------------------------");
-        const parsedTasks = JSON.parse(cleanedJsonString);
-        if (Array.isArray(parsedTasks) && parsedTasks.length > 0 &&
-            parsedTasks.every(task =>
-                typeof task.title === 'string' &&
-                typeof task.description === 'string'
-            )
-        ) {
-            console.log(`Successfully parsed ${parsedTasks.length} tasks from AI for entire plan.`);
-            return parsedTasks.map(task => ({
-                title: String(task.title),
-                description: String(task.description)
-            }));
-        } else {
-             console.warn(`Parsed JSON for entire plan not valid/empty array of tasks. Parsed:`, parsedTasks, "Original AI String:", aiResponseString);
-        }
+      const cleanedJsonString = jsonMatch[0];
+      console.log("-----------------------------------------------------");
+      console.log("CLEANED JSON STRING (extracted by regex):");
+      console.log(cleanedJsonString);
+      console.log("-----------------------------------------------------");
+      const parsedTasks = JSON.parse(cleanedJsonString);
+      if (Array.isArray(parsedTasks) && parsedTasks.length > 0 &&
+        parsedTasks.every(task =>
+          typeof task.title === 'string' &&
+          typeof task.description === 'string'
+        )
+      ) {
+        console.log(`Successfully parsed ${parsedTasks.length} tasks from AI for entire plan.`);
+        return parsedTasks.map(task => ({
+          title: String(task.title),
+          description: String(task.description)
+        }));
+      } else {
+        console.warn(`Parsed JSON for entire plan not valid/empty array of tasks. Parsed:`, parsedTasks, "Original AI String:", aiResponseString);
+      }
     }
     console.warn(`AI response for entire plan not valid JSON array after extraction. Fallback. Raw: ${aiResponseString}`);
     return fallbackTasks;

@@ -6,6 +6,7 @@
   import { fly, fade, scale } from 'svelte/transition';
   import { quintOut } from 'svelte/easing';
   import AppHeader from '$lib/components/AppHeader.svelte';
+  import CalendarAIPanel from '$lib/components/CalendarAIPanel.svelte';
 
   // Firebase imports
   import { auth, db } from '$lib/firebase.js';
@@ -16,6 +17,7 @@
   let isSidebarOpen = false;
   let globalUsername = "User"; 
   let isDarkMode = false;
+  let isAIPanelOpen = false;
   let currentDateTime = "";
   let dateTimeInterval: ReturnType<typeof setInterval> | null = null;
   let pageErrorMessage: string | null = null;
@@ -57,6 +59,36 @@
   let keyboardNavigation = true;
   let accessibilityMessage = "";
   let accessibilityMessageType = "";
+
+  // --- Notification Settings State ---
+  const reminderOptions = [
+    { label: '15 minutes', value: 0.25 },
+    { label: '30 minutes', value: 0.5 },
+    { label: '1 hour', value: 1 },
+    { label: '2 hours', value: 2 },
+    { label: '6 hours', value: 6 },
+    { label: '12 hours', value: 12 },
+    { label: '1 day', value: 24 },
+    { label: '2 days', value: 48 },
+    { label: '1 week', value: 168 }
+  ];
+  const repeatOptions = [
+    { label: 'No repeat', value: null },
+    { label: '15 minutes', value: 0.25 },
+    { label: '30 minutes', value: 0.5 },
+    { label: '1 hour', value: 1 },
+    { label: '2 hours', value: 2 },
+    { label: '6 hours', value: 6 },
+    { label: '12 hours', value: 12 },
+    { label: '24 hours', value: 24 }
+  ];
+  
+  let defaultReminderHours: number = 24;
+  let defaultRepeatIntervalHours: number | null = null;
+  let emailReminders: boolean = true;
+  let notificationMessage = "";
+  let notificationMessageType = "";
+  let isLoadingNotificationSettings = false;
 
   // Load accessibility settings from localStorage
   function loadAccessibilitySettings() {
@@ -132,6 +164,41 @@
     }
   }
 
+  // Save notification settings to Firestore
+  async function saveNotificationSettings() {
+    if (!currentUid) {
+      notificationMessage = "User not authenticated. Please refresh.";
+      notificationMessageType = "error";
+      return;
+    }
+    
+    isLoadingNotificationSettings = true;
+    notificationMessage = "";
+    
+    try {
+      const credRef = doc(db, "credentials", currentUid);
+      await updateDoc(credRef, {
+        notificationSettings: {
+          defaultReminderHours,
+          defaultRepeatIntervalHours,
+          emailReminders
+        }
+      });
+      
+      notificationMessage = "Notification settings saved successfully!";
+      notificationMessageType = "success";
+      setTimeout(() => {
+        notificationMessage = "";
+      }, 3000);
+    } catch (error: any) {
+      console.error("Error saving notification settings:", error);
+      notificationMessage = `Failed to save: ${error.message || 'Unknown error'}`;
+      notificationMessageType = "error";
+    } finally {
+      isLoadingNotificationSettings = false;
+    }
+  }
+
   async function loadUserProfile(user: FirebaseUser) {
     isLoadingSave = true; 
     profileFormMessage = "";
@@ -156,8 +223,18 @@
         
         // Load saved profile picture from Firestore
         if (credSnap.exists() && credSnap.data().photoBase64) {
-          profilePictureBase64 = credSnap.data().photoBase64;
-          profilePicturePreview = credSnap.data().photoBase64;
+          const rawPhoto = credSnap.data().photoBase64;
+          const fixedPhoto = ensureBase64Prefix(rawPhoto);
+          profilePictureBase64 = fixedPhoto;
+          profilePicturePreview = fixedPhoto;
+        }
+        
+        // Load notification settings from Firestore
+        if (credData.notificationSettings) {
+          const ns = credData.notificationSettings;
+          defaultReminderHours = ns.defaultReminderHours ?? 24;
+          defaultRepeatIntervalHours = ns.defaultRepeatIntervalHours ?? null;
+          emailReminders = ns.emailReminders ?? true;
         }
       }
     } catch (error) {
@@ -441,6 +518,22 @@
       if (dateTimeInterval) clearInterval(dateTimeInterval);
     };
   });
+
+  function ensureBase64Prefix(base64: string): string {
+    if (!base64) return '';
+    if (base64.startsWith('data:image')) return base64;
+    if (base64.startsWith('http')) return base64; 
+    return `data:image/jpeg;base64,${base64}`;
+  }
+
+  function handleImageError() {
+    if (auth.currentUser?.photoURL && profilePicturePreview !== auth.currentUser.photoURL) {
+      console.log('Profile preview failed, falling back to Auth photo');
+      profilePicturePreview = auth.currentUser.photoURL;
+    } else {
+      profilePicturePreview = "https://via.placeholder.com/150/CCCCCC/808080?Text=Avatar";
+    }
+  }
 </script>
 
 <!-- HTML Structure (Sidebar, Header, Settings Content) -->
@@ -495,10 +588,6 @@
              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M20.25 14.15v4.098a2.25 2.25 0 0 1-2.25 2.25h-12a2.25 2.25 0 0 1-2.25-2.25V14.15M18 18.75h.75A2.25 2.25 0 0 0 21 16.5v-1.5a2.25 2.25 0 0 0-2.25-2.25h-15A2.25 2.25 0 0 0 1.5 15v1.5A2.25 2.25 0 0 0 3.75 18.75H4.5M12 12.75a3 3 0 0 0-3-3H5.25V7.5a3 3 0 0 1 3-3h7.5a3 3 0 0 1 3 3v2.25H15a3 3 0 0 0-3 3Z" /></svg>
             <span>Workspace</span>
           </a>
-           <a href="/ai-chat" class="flex items-center gap-3 px-3 py-2 rounded-md font-semibold transition-colors duration-150" class:text-gray-700={!isDarkMode} class:text-zinc-300={isDarkMode} class:hover:bg-gray-100={!isDarkMode} class:hover:bg-zinc-700={isDarkMode} class:bg-blue-600={$page.url.pathname === '/ai-chat' && !isDarkMode} class:bg-blue-800={$page.url.pathname === '/ai-chat' && isDarkMode} class:text-white={$page.url.pathname === '/ai-chat'}>
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5" aria-hidden="true"><path d="M12.001 2.504a2.34 2.34 0 00-2.335 2.335v.583c0 .582.212 1.13.582 1.556l.03.035-.03.034a2.34 2.34 0 00-2.917 3.916A3.287 3.287 0 004.08 14.25a3.287 3.287 0 003.287 3.287h8.266a3.287 3.287 0 003.287-3.287 3.287 3.287 0 00-1.253-2.583 2.34 2.34 0 00-2.917-3.916l-.03-.034.03-.035c.37-.425.582-.973.582-1.555v-.583a2.34 2.34 0 00-2.335-2.336h-.002zM9.75 12.75a.75.75 0 000 1.5h4.5a.75.75 0 000-1.5h-4.5z" /><path fill-rule="evenodd" d="M12 1.5c5.79 0 10.5 4.71 10.5 10.5S17.79 22.5 12 22.5 1.5 17.79 1.5 12 6.21 1.5 12 1.5zM2.85 12a9.15 9.15 0 019.15-9.15 9.15 9.15 0 019.15 9.15 9.15 9.15 0 01-9.15 9.15A9.15 9.15 0 012.85 12z" clip-rule="evenodd" /></svg>
-            <span>Ask Synthia</span>
-          </a>
         </nav>
       </div>
       <button on:click={handleLogout} class="flex items-center gap-3 px-3 py-2 rounded-md font-semibold w-full mt-auto transition-colors duration-150" class:hover:bg-gray-100={!isDarkMode} class:hover:bg-zinc-700={isDarkMode} class:text-gray-700={!isDarkMode} class:text-zinc-300={isDarkMode}>
@@ -523,7 +612,12 @@
             <div class="form-group profile-picture-group">
               <label for="profilePictureInput">Profile Picture</label>
               <div class="profile-picture-controls">
-                <img src={profilePicturePreview} alt="Profile Preview" class="profile-preview" />
+                <img 
+                  src={profilePicturePreview} 
+                  alt="Profile Preview" 
+                  class="profile-preview" 
+                  on:error={handleImageError}
+                />
                 <input type="file" id="profilePictureInput" accept="image/*" on:change={handleProfilePictureInputChange} style="display: none;" />
                 <button type="button" class="button button-secondary upload-button" on:click={() => document.getElementById('profilePictureInput')?.click()}>
                   Choose Image
@@ -636,6 +730,54 @@
           {/if}
         </section>
 
+        <section class="settings-section">
+          <h2>Notification Preferences</h2>
+          <p class="section-description">Configure when and how you receive deadline reminders.</p>
+          
+          <div class="notification-settings-grid">
+            <div class="form-group">
+              <label for="defaultReminderHours">First Reminder</label>
+              <p class="input-hint">How long before a deadline should we remind you?</p>
+              <select id="defaultReminderHours" bind:value={defaultReminderHours} class="settings-select">
+                {#each reminderOptions as option}
+                  <option value={option.value}>{option.label}</option>
+                {/each}
+              </select>
+            </div>
+            
+            <div class="form-group">
+              <label for="defaultRepeatInterval">Repeat Reminder</label>
+              <p class="input-hint">After the first reminder, repeat every...</p>
+              <select id="defaultRepeatInterval" bind:value={defaultRepeatIntervalHours} class="settings-select">
+                {#each repeatOptions as option}
+                  <option value={option.value}>{option.label}</option>
+                {/each}
+              </select>
+            </div>
+          </div>
+          
+          <div class="notification-toggles">
+            <div class="accessibility-option">
+              <div class="option-info">
+                <label for="emailReminders" class="option-label">Email Reminders</label>
+                <p class="option-description">Receive deadline reminders via email.</p>
+              </div>
+              <label class="toggle-switch">
+                <input type="checkbox" id="emailReminders" bind:checked={emailReminders} />
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+          </div>
+          
+          <button class="button button-primary" on:click={saveNotificationSettings} disabled={isLoadingNotificationSettings}>
+            {#if isLoadingNotificationSettings}Saving...{:else}Save Notification Settings{/if}
+          </button>
+          
+          {#if notificationMessage}
+            <p class="message {notificationMessageType}">{notificationMessage}</p>
+          {/if}
+        </section>
+
         <section class="settings-section danger-zone">
           <h2>Account Deletion</h2>
           <p class="danger-text">
@@ -657,6 +799,17 @@
     </div>
   </div>
 </div>
+
+<!-- AI Assistant Panel -->
+<CalendarAIPanel
+    {isDarkMode}
+    tasks={[]}
+    bind:isOpen={isAIPanelOpen}
+    on:selectTask={(e) => {
+      // Navigate to tasks page with task ID to auto-open it
+      goto(`/tasks?taskId=${e.detail.taskId}`);
+    }}
+/>
 
 <!-- Styles (as provided in the previous combined message, including settings-specific styles and dark mode) -->
 <style>
@@ -891,5 +1044,68 @@
     .option-info {
       margin-right: 0;
     }
+  }
+  
+  /* Notification Settings Styles */
+  .notification-settings-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+    margin-bottom: 1.5rem;
+  }
+  
+  @media (max-width: 640px) {
+    .notification-settings-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+  
+  .notification-toggles {
+    margin-bottom: 1.5rem;
+  }
+  
+  .settings-select {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    border: 1px solid #d1d5db;
+    background-color: white;
+    font-size: 0.95rem;
+    color: #374151;
+    cursor: pointer;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  
+  :global(.dark) .settings-select {
+    background-color: #374151;
+    border-color: #4b5563;
+    color: #e5e7eb;
+  }
+  
+  .settings-select:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25);
+  }
+  
+  .input-hint {
+    font-size: 0.8rem;
+    color: #6b7280;
+    margin-top: 0.25rem;
+    margin-bottom: 0.5rem;
+  }
+  
+  :global(.dark) .input-hint {
+    color: #9ca3af;
+  }
+  
+  .section-description {
+    color: #6b7280;
+    margin-bottom: 1.5rem;
+    font-size: 0.95rem;
+  }
+  
+  :global(.dark) .section-description {
+    color: #9ca3af;
   }
 </style>

@@ -9,7 +9,8 @@
 	import { invalidateAll } from '$app/navigation'; // Crucial for reloading data
 	import type { PageData, ActionData } from './$types';
 	import AppHeader from '$lib/components/AppHeader.svelte';
-	import PendingInvitations from '$lib/components/PendingInvitations.svelte';
+	import CalendarAIPanel from '$lib/components/CalendarAIPanel.svelte';
+
 	import DatePicker from '$lib/components/DatePicker.svelte';
 
 	export let data: PageData;
@@ -25,6 +26,7 @@
 	// UI state
 	let isSidebarOpen = false;
 	let isDarkMode = false; // This will be set by onMount from localStorage or system
+	let isAIPanelOpen = false;
 	let currentDateTime = "";
 	let dateTimeInterval: ReturnType<typeof setInterval> | null = null;
 	let showLogoutConfirm = false;
@@ -173,16 +175,140 @@
 		}
 	];
 
+    // pdfjs-dist will be imported dynamically to avoid SSR issues
+
 	let showTemplateUsageModal = false;
 	let selectedTemplateForUsage: Template | null = null;
 	let newWorkspaceNameFromTemplate = '';
 	let projectStartDate: string = new Date().toISOString().split('T')[0];
 	let projectEndDate: string = '';
 	let projectNotes: string = '';
-	let stepSpecificInputs: Record<number, string> = {};
-	let isSubmittingTemplateWorkspace = false;
-	let templateFormActionError: string | null = null;
-	let templateFormSuccessMessage: string | null = null;
+    let pdfContextText: string = ''; 
+    let isParsingPdf = false;
+    let pdfFiles: { name: string; status: 'reading' | 'scanning' | 'ready' | 'error'; errorMessage?: string }[] = [];
+
+    let stepSpecificInputs: Record<number, string> = {};
+    let isSubmittingTemplateWorkspace = false;
+    let templateFormActionError: string | null = null;
+    let templateFormSuccessMessage: string | null = null;
+
+    function sanitizeText(text: string): string {
+        return text
+            .replace(/[\x00-\x09\x0B-\x0C\x0E-\x1F]/g, '') // Remove non-printable control chars
+            .replace(/\s+/g, ' ') // Collapse whitespace
+            .trim();
+    }
+
+    async function handlePdfUpload(event: Event) {
+        const input = event.target as HTMLInputElement;
+        if (!input.files || input.files.length === 0) return;
+        
+        isParsingPdf = true;
+        
+        pdfFiles = Array.from(input.files).map(f => ({ name: f.name, status: 'reading' }));
+        pdfContextText = ''; 
+
+        try {
+            const pdfjsLib = await import('pdfjs-dist');
+            // Use local worker file (copied to static folder) to avoid detailed CDN versioning issues
+            pdfjsLib.GlobalWorkerOptions.workerSrc = `/pdf.worker.min.mjs`;
+
+            let combinedText = '';
+
+            for (let i = 0; i < input.files.length; i++) {
+                const file = input.files[i];
+                try {
+                    const arrayBuffer = await file.arrayBuffer();
+                    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                    let fileText = '';
+
+                    // 1. Try standard text extraction first
+                    for (let j = 1; j <= pdf.numPages; j++) {
+                        const page = await pdf.getPage(j);
+                        const textContent = await page.getTextContent();
+                        const pageText = textContent.items.map((item: any) => item.str).join(' ');
+                        fileText += pageText + '\n';
+                    }
+                    
+                    let cleanText = sanitizeText(fileText);
+
+                    // 2. Fallback to OCR if text is suspicious (too short/empty)
+                    if (cleanText.length < 20) {
+                        console.log(`File ${file.name} has little text (${cleanText.length} chars). Attempting OCR...`);
+                        pdfFiles[i] = { ...pdfFiles[i], status: 'scanning' }; // Update status to scanning
+                        
+                        try {
+                             // Dynamically import Tesseract
+                            const Tesseract = await import('tesseract.js');
+                            
+                            let ocrText = '';
+                            
+                            for (let j = 1; j <= pdf.numPages; j++) {
+                                const page = await pdf.getPage(j);
+                                // Use a modest scale to keep performance reasonable (1.5 - 2.0)
+                                const viewport = page.getViewport({ scale: 2.0 }); 
+                                
+                                const canvas = document.createElement('canvas');
+                                const context = canvas.getContext('2d');
+                                if (context) {
+                                    canvas.height = viewport.height;
+                                    canvas.width = viewport.width;
+                                    
+                                    await page.render({ canvasContext: context, viewport: viewport }).promise;
+                                    
+                                    // Use the static recognize method which is often simpler for one-off usage
+                                    // But createWorker is better for multiple pages. Let's try createWorker again but simpler.
+                                    const worker = await Tesseract.createWorker('eng');
+                                    const { data: { text } } = await worker.recognize(canvas);
+                                    await worker.terminate();
+
+                                    ocrText += text + '\n';
+                                }
+                            }
+                            
+                            const cleanOcrText = sanitizeText(ocrText);
+                            if (cleanOcrText.length > 20) {
+                                console.log(`OCR successful for ${file.name}. Found ${cleanOcrText.length} chars.`);
+                                cleanText = cleanOcrText; // Replace the empty text with OCR text!
+                            } else {
+                                console.warn(`OCR also failed/empty for ${file.name}. Raw OCR length: ${ocrText.length}`);
+                            }
+                        } catch (ocrErr: any) {
+                            console.error(`OCR failed for ${file.name}:`, ocrErr);
+                            // Capture the specific error to show user
+                            pdfFiles[i] = { ...pdfFiles[i], errorMessage: `OCR Error: ${ocrErr.message || ocrErr}` };
+                        }
+                    }
+
+                    if (cleanText.length > 20) { 
+                         combinedText += `\n--- SOURCE: ${file.name} ---\n${cleanText}\n`;
+                         pdfFiles[i] = { ...pdfFiles[i], status: 'ready' };
+                    } else {
+                        console.warn(`File ${file.name} extracted to empty/short text. Clean length: ${cleanText.length}`);
+                        // If we didn't already set a specific error, set a generic one
+                        if (!pdfFiles[i].errorMessage) {
+                            pdfFiles[i] = { ...pdfFiles[i], status: 'error', errorMessage: 'No text found. OCR failed or file is empty.' };
+                        } else {
+                            pdfFiles[i] = { ...pdfFiles[i], status: 'error' };
+                        }
+                    }
+
+                } catch (err: any) {
+                    console.error(`Error parsing ${file.name}:`, err);
+                    pdfFiles[i] = { ...pdfFiles[i], status: 'error', errorMessage: `Parse Error: ${err.message}` };
+                }
+            }
+            
+            pdfContextText = combinedText;
+            console.log('All PDFs parsed. Total length:', pdfContextText.length);
+
+        } catch (err) {
+            console.error('Global PDF error:', err);
+            alert('Failed to initialize PDF reader.');
+        } finally {
+            isParsingPdf = false;
+        }
+    }
 
 	function openAddBoardModal() {
 		workspaceNameInput = '';
@@ -209,6 +335,8 @@
 		projectStartDate = new Date().toISOString().split('T')[0];
 		projectEndDate = '';
 		projectNotes = '';
+        pdfContextText = '';
+        pdfFiles = [];
 		stepSpecificInputs = {};
 		templateFormActionError = null;
 		templateFormSuccessMessage = null;
@@ -413,11 +541,6 @@
             </svg>
             <span>Workspace</span>
           </a>
-          <a href="/ai-chat" class="flex items-center gap-3 px-3 py-2 rounded-md font-semibold transition-colors duration-150 nav-link"
-            class:active={$page.url.pathname === '/ai-chat'}>
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5 nav-link-icon" aria-hidden="true"><path d="M12.001 2.504a2.34 2.34 0 00-2.335 2.335v.583c0 .582.212 1.13.582 1.556l.03.035-.03.034a2.34 2.34 0 00-2.917 3.916A3.287 3.287 0 004.08 14.25a3.287 3.287 0 003.287 3.287h8.266a3.287 3.287 0 003.287-3.287 3.287 3.287 0 00-1.253-2.583 2.34 2.34 0 00-2.917-3.916l-.03-.034.03-.035c.37-.425.582-.973.582-1.555v-.583a2.34 2.34 0 00-2.335-2.336h-.002zM9.75 12.75a.75.75 0 000 1.5h4.5a.75.75 0 000-1.5h-4.5z" /><path fill-rule="evenodd" d="M12 1.5c5.79 0 10.5 4.71 10.5 10.5S17.79 22.5 12 22.5 1.5 17.79 1.5 12 6.21 1.5 12 1.5zM2.85 12a9.15 9.15 0 019.15-9.15 9.15 9.15 0 019.15 9.15 9.15 9.15 0 01-9.15 9.15A9.15 9.15 0 012.85 12z" clip-rule="evenodd" /></svg>
-            <span>Ask Synthia</span>
-          </a>
         </nav>
       </div>
       <button on:click={handleLogout} class="logout-button flex items-center gap-3 px-3 py-2 rounded-md font-semibold w-full mt-auto transition-colors duration-150">
@@ -450,9 +573,7 @@
 		
 		<main class="main-area">
 			<div class="container">
-				<!-- Pending Invitations Section -->
-				<PendingInvitations on:accepted={() => invalidateAll()} />
-				
+
 				<h2 class="section-title">Your Workspaces</h2>
 					
 				<section class="workspace-section">
@@ -755,6 +876,48 @@
 				{#if templateFormActionError}
 					<p class="form-action-error">{templateFormActionError}</p>
 				{/if}
+
+                <!-- PDF Context Upload (Multiple) -->
+                <hr class="modal-divider"/>
+                <div class="modal-form-group">
+                    <label class="modal-label">Upload Reference PDFs (Optional)</label>
+                    <div class="pdf-upload-container">
+                        <input type="file" id="pdfUpload" accept=".pdf" multiple on:change={handlePdfUpload} class="hidden-file-input" />
+                        <label for="pdfUpload" class="button button-secondary pdf-upload-btn">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 mr-2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
+                            </svg>
+                            {isParsingPdf ? 'Reading PDFs...' : (pdfFiles.length > 0 ? 'Change PDFs' : 'Choose PDFs')}
+                        </label>
+                    </div>
+                    
+                    {#if pdfFiles.length > 0}
+                        <div class="pdf-file-list">
+                            {#each pdfFiles as file}
+                                <div class="pdf-file-info">
+                                    <span class="file-name" title={file.name}>{file.name}</span>
+                                    <span class="parse-status {file.status}" title={file.status === 'error' ? (file.errorMessage || 'Error reading file') : (file.status === 'ready' ? 'Ready' : (file.status === 'scanning' ? 'Scanning image text...' : 'Reading...'))}>
+                                        {#if file.status === 'ready'}
+                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4 text-green-500"><path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm3.857-9.809a.75.75 0 0 0-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 1 0-1.06 1.061l2.5 2.5a.75.75 0 0 0 1.137-.089l4-5.5Z" clip-rule="evenodd" /></svg>
+                                        {:else if file.status === 'reading'}
+                                            <svg class="w-4 h-4 animate-spin text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                                        {:else if file.status === 'scanning'}
+                                            <svg class="w-4 h-4 animate-spin text-purple-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                                        {:else}
+                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4 text-red-500"><path fill-rule="evenodd" d="M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0Zm-8-5a.75.75 0 0 1 .75.75v4.5a.75.75 0 0 1-1.5 0v-4.5A.75.75 0 0 1 10 5Zm0 10a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd" /></svg>
+                                        {/if}
+                                    </span>
+                                </div>
+                            {/each}
+                        </div>
+                    {/if}
+
+                    <p class="input-hint">Upload relevant documents (syllabi, briefs, notes) to add context.</p>
+                </div>
+                <!-- Hidden input to send text to server -->
+                <input type="hidden" name="pdfContext" value={pdfContextText} />
+                <hr class="modal-divider"/>
+
 				{#if templateFormSuccessMessage && !pageSuccessMessage}
 					<p class="form-success-message">{templateFormSuccessMessage}</p>
 				{/if}
@@ -780,6 +943,18 @@
 </div>
 {/if}
 </div>
+
+<!-- AI Assistant Panel -->
+<CalendarAIPanel
+    {isDarkMode}
+    tasks={boards.flatMap(board => board.tasks || [])}
+    bind:isOpen={isAIPanelOpen}
+    on:selectTask={(e) => {
+      // Navigate to tasks page with task ID to auto-open it
+      goto(`/tasks?taskId=${e.detail.taskId}`);
+    }}
+/>
+
 <style>
 :root {
     --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -1524,8 +1699,23 @@
 :global(body.dark) .template-modal-goal { color: var(--dark-text-secondary); }
 :global(body.dark) .template-modal-goal strong { color: var(--dark-text-primary); }
 .date-input-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--space-4); margin-bottom: var(--space-4); }
-.input-hint { font-size: 0.8rem; color: var(--light-text-tertiary); margin-top: var(--space-1_5); }
-:global(body.dark) .input-hint { color: var(--dark-text-tertiary); }
+.step-input-hint { font-size: 0.8em; color: var(--light-text-tertiary); margin-top: 0.25rem; font-style: italic; }
+:global(.dark) .step-input-hint { color: var(--dark-text-tertiary); }
+
+/* PDF Upload Styles */
+.hidden-file-input { display: none; }
+.pdf-upload-container { display: flex; align-items: center; gap: 1rem; margin-top: 0.5rem; }
+.pdf-upload-btn { display: flex; align-items: center; cursor: pointer; }
+
+.pdf-file-list { margin-top: 0.75rem; display: flex; flex-direction: column; gap: 0.5rem; }
+.pdf-file-info { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; font-size: 0.9em; background: var(--light-bg-subtle); padding: 0.25rem 0.75rem; border-radius: 4px; border: 1px solid #e9ecef; }
+:global(.dark) .pdf-file-info { background: var(--dark-bg-subtle); border-color: #3f3f46; }
+
+.file-name { font-weight: 500; color: var(--light-text-primary); max-width: 250px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+:global(.dark) .file-name { color: var(--dark-text-primary); }
+
+.parse-status { display: flex; align-items: center; gap: 0.25rem; }
+.parse-status.error { color: #ef4444; }
 .modal-divider { margin: var(--space-6) 0; border: 0; border-top: 1px solid var(--light-border-primary); }
 :global(body.dark) .modal-divider { border-top-color: var(--dark-border-primary); }
 .ai-prompt-section-title { font-size: 1rem; font-weight: 500; color: var(--light-text-secondary); margin-bottom: var(--space-3); }

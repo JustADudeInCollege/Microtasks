@@ -15,29 +15,25 @@ export const nodes = [
 	() => import('./nodes/11'),
 	() => import('./nodes/12'),
 	() => import('./nodes/13'),
-	() => import('./nodes/14'),
-	() => import('./nodes/15'),
-	() => import('./nodes/16')
+	() => import('./nodes/14')
 ];
 
 export const server_loads = [];
 
 export const dictionary = {
 		"/": [~2],
-		"/ai-chat": [~3],
-		"/calendar": [~4],
-		"/dashboard": [~5],
-		"/forgotpass": [~6],
-		"/home": [~7],
-		"/join/[token]": [~8],
-		"/kanban": [~9],
-		"/login": [~10],
-		"/settings": [~11],
-		"/signup": [~12],
-		"/support": [13],
-		"/tasks": [~14],
-		"/workspace": [~15],
-		"/workspace/[boardId]": [~16]
+		"/calendar": [~3],
+		"/dashboard": [~4],
+		"/forgotpass": [~5],
+		"/home": [~6],
+		"/join/[token]": [~7],
+		"/kanban": [~8],
+		"/login": [~9],
+		"/settings": [~10],
+		"/signup": [~11],
+		"/tasks": [~12],
+		"/workspace": [~13],
+		"/workspace/[boardId]": [~14]
 	};
 
 export const hooks = {

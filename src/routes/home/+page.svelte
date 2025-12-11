@@ -5,6 +5,7 @@
   // Removed direct Firestore client-side imports for username fetching as it's now server-side
   import { enhance } from '$app/forms';
   import AppHeader from '$lib/components/AppHeader.svelte';
+  import CalendarAIPanel from '$lib/components/CalendarAIPanel.svelte';
   import { slide, scale, fly, fade } from 'svelte/transition';
   import { quintOut } from 'svelte/easing';
   import { goto, invalidateAll } from '$app/navigation';
@@ -28,9 +29,19 @@
   let isRefreshingTasks = false;
   let errorMessage: string | null = null;
   let showTaskForm = false;
+  let isAIPanelOpen = false;
   let showCompletedTasks = false;
   let showDeleteConfirmation = false;
   let pendingDeleteNoteId: string | null = null;
+  let selectedTask: Task | null = null; // For task detail modal
+  let isEditingTask = false; // For inline task editing
+
+  // Edit task form fields
+  let editTaskTitle = "";
+  let editTaskDescription = "";
+  let editTaskDueDate: string | null = null;
+  let editTaskDueTime: string | null = null;
+  let editTaskPriority: string = 'standard';
 
   let taskTitle = "";
   let taskDescription = "";
@@ -44,7 +55,7 @@
   const encouragingMessages = [
     "No tasks today? Enjoy the calm before the next storm of productivity!",
     "Looks like a clear schedule! Time to recharge or tackle a passion project.",
-    "Zero tasks on the docket! Maybe it's a sign to get cynthia to assist you in learning something new today?",
+    "Zero tasks on the docket! Maybe it's a sign to get Synthia to assist you in learning something new today?",
     "Your to-do list is empty for today. Embrace the freedom!",
     "No tasks? Perfect day to plan your next big move or simply relax.",
   ];
@@ -55,15 +66,16 @@
 
   interface Task {
     id: string;
-    description: string; // This is used as title in the UI for today's tasks
+    title?: string; // Primary task name (used by calendar route)
+    description: string; // Can be used as fallback or additional details
     isCompleted: boolean;
     createdAt: string | null; // Assuming this is createdAtISO from server
     userId?: string;
     dueDate?: string | null; // Assuming this is dueDateISO (YYYY-MM-DD) from server
+    dueTime?: string | null; // HH:MM format
     priority?: string | number;
     tags?: string[];
     noteId?: string;
-    // color?: string; // Add if you use color for tasks on home page
   }
 
   // Updated to include username from server
@@ -212,6 +224,35 @@
       }
       await invalidateAll(); 
       await update({ reset: false });
+    };
+  };
+
+  function startEditTask() {
+    if (!selectedTask) return;
+    editTaskTitle = selectedTask.title || selectedTask.description || '';
+    editTaskDescription = selectedTask.description || '';
+    editTaskDueDate = selectedTask.dueDate || null;
+    editTaskDueTime = selectedTask.dueTime || null;
+    editTaskPriority = String(selectedTask.priority || 'standard');
+    isEditingTask = true;
+  }
+
+  function cancelEditTask() {
+    isEditingTask = false;
+  }
+
+  const editTaskEnhanceCallback = () => {
+    return async ({ result, update }: { result: any, update: any }) => {
+      if (result.type === 'success' || result.type === 'redirect') {
+        isEditingTask = false;
+        selectedTask = null;
+        await invalidateAll();
+      } else if (result.type === 'failure') {
+        errorMessage = result.data?.error || 'Failed to update task.';
+      } else if (result.type === 'error') {
+        errorMessage = result.error?.message || 'An unexpected error occurred updating the task.';
+      }
+      await update({ reset: result.type !== 'failure' });
     };
   };
 
@@ -615,6 +656,270 @@
     </div>
   {/if}
 
+  <!-- Task Details Modal -->
+  {#if selectedTask}
+    <div 
+      class="fixed inset-0 z-[70] flex items-center justify-center bg-black bg-opacity-50 p-4 backdrop-blur-sm"
+      on:click|self={() => selectedTask = null}
+      transition:fade={{ duration: 150 }}
+    >
+      <div 
+        class={`rounded-xl shadow-2xl w-full max-w-md max-h-[80vh] overflow-hidden ${isDarkMode ? 'bg-zinc-800' : 'bg-white'}`}
+        transition:scale={{ duration: 200, start: 0.95 }}
+      >
+        <!-- Header -->
+        <div class={`flex items-center justify-between px-5 py-4 border-b ${isDarkMode ? 'border-zinc-700' : 'border-gray-200'}`}>
+          <h3 class={`text-lg font-semibold ${isDarkMode ? 'text-zinc-100' : 'text-gray-800'}`}>Task Details</h3>
+          <button
+            on:click={() => selectedTask = null}
+            class={`p-1 rounded-md transition-colors ${isDarkMode ? 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'}`}
+            aria-label="Close"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        
+        {#if !isEditingTask}
+        <!-- View Mode Content -->
+        <div class={`p-5 space-y-4 overflow-y-auto max-h-[60vh] ${isDarkMode ? 'text-zinc-300' : 'text-gray-700'}`}>
+          <!-- Title -->
+          <div>
+            <h4 class={`text-xl font-bold ${isDarkMode ? 'text-zinc-100' : 'text-gray-900'}`}>
+              {selectedTask.title || selectedTask.description || 'Untitled Task'}
+            </h4>
+            {#if selectedTask.isCompleted}
+              <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 mt-2">
+                ✓ Completed
+              </span>
+            {/if}
+          </div>
+          
+          <!-- Description -->
+          {#if selectedTask.description && selectedTask.title}
+            <div>
+              <label class={`text-xs font-medium uppercase tracking-wide ${isDarkMode ? 'text-zinc-500' : 'text-gray-500'}`}>Description</label>
+              <p class={`mt-1 ${isDarkMode ? 'text-zinc-300' : 'text-gray-700'}`}>{selectedTask.description}</p>
+            </div>
+          {/if}
+          
+          <!-- Priority -->
+          <div>
+            <label class={`text-xs font-medium uppercase tracking-wide ${isDarkMode ? 'text-zinc-500' : 'text-gray-500'}`}>Priority</label>
+            <div class="mt-1">
+              {#if selectedTask.priority === 'urgent'}
+                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">🔴 Urgent</span>
+              {:else if selectedTask.priority === 'high'}
+                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">🟠 High</span>
+              {:else if selectedTask.priority === 'low'}
+                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">🟢 Low</span>
+              {:else}
+                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">🔵 Standard</span>
+              {/if}
+            </div>
+          </div>
+          
+          <!-- Due Date/Time -->
+          {#if selectedTask.dueDate}
+            <div class="flex gap-6">
+              <div>
+                <label class={`text-xs font-medium uppercase tracking-wide ${isDarkMode ? 'text-zinc-500' : 'text-gray-500'}`}>Due Date</label>
+                <p class={`mt-1 flex items-center gap-1 ${isDarkMode ? 'text-zinc-300' : 'text-gray-700'}`}>
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5" />
+                  </svg>
+                  {new Date(selectedTask.dueDate + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                </p>
+              </div>
+              {#if selectedTask.dueTime}
+                <div>
+                  <label class={`text-xs font-medium uppercase tracking-wide ${isDarkMode ? 'text-zinc-500' : 'text-gray-500'}`}>Due Time</label>
+                  <p class={`mt-1 flex items-center gap-1 ${isDarkMode ? 'text-zinc-300' : 'text-gray-700'}`}>
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                    </svg>
+                    {(() => {
+                      const [h, m] = (selectedTask.dueTime || '').split(':');
+                      const hour = parseInt(h);
+                      const ampm = hour >= 12 ? 'PM' : 'AM';
+                      const h12 = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
+                      return `${h12}:${m} ${ampm}`;
+                    })()}
+                  </p>
+                </div>
+              {/if}
+            </div>
+          {/if}
+          
+          <!-- Tags -->
+          {#if selectedTask.tags && selectedTask.tags.length > 0}
+            <div>
+              <label class={`text-xs font-medium uppercase tracking-wide ${isDarkMode ? 'text-zinc-500' : 'text-gray-500'}`}>Tags</label>
+              <div class="mt-1 flex flex-wrap gap-1">
+                {#each selectedTask.tags as tag}
+                  <span class={`inline-flex items-center px-2 py-0.5 rounded text-xs ${isDarkMode ? 'bg-zinc-700 text-zinc-300' : 'bg-gray-100 text-gray-700'}`}>
+                    #{tag}
+                  </span>
+                {/each}
+              </div>
+            </div>
+          {/if}
+        </div>
+        
+        <!-- Footer - View Mode -->
+        <div class={`px-5 py-3 border-t flex flex-col gap-2 ${isDarkMode ? 'border-zinc-700 bg-zinc-750' : 'border-gray-200 bg-gray-50'}`}>
+          <!-- Action buttons row -->
+          <div class="flex gap-2">
+            <form
+              method="POST"
+              action="?/toggleTask"
+              use:enhance={taskFormEnhanceCallback}
+              class="flex-1"
+            >
+              <input type="hidden" name="id" value={selectedTask.id} />
+              <input type="hidden" name="isCompleted" value={selectedTask.isCompleted ? '' : 'on'} />
+              <button
+                type="submit"
+                on:click={() => { selectedTask = null; }}
+                class={`w-full px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2
+                  ${selectedTask.isCompleted 
+                    ? (isDarkMode ? 'bg-amber-600 text-white hover:bg-amber-500' : 'bg-amber-500 text-white hover:bg-amber-600')
+                    : (isDarkMode ? 'bg-green-600 text-white hover:bg-green-500' : 'bg-green-500 text-white hover:bg-green-600')}`}
+              >
+                {#if selectedTask.isCompleted}
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 0 1 0 12h-3" />
+                  </svg>
+                  Undo
+                {:else}
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+                  </svg>
+                  Complete
+                {/if}
+              </button>
+            </form>
+            <button
+              type="button"
+              on:click={startEditTask}
+              class={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2
+                ${isDarkMode ? 'bg-blue-600 text-white hover:bg-blue-500' : 'bg-blue-500 text-white hover:bg-blue-600'}`}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
+                <path stroke-linecap="round" stroke-linejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125" />
+              </svg>
+              Edit
+            </button>
+          </div>
+          <!-- Close button -->
+          <button
+            on:click={() => { selectedTask = null; isEditingTask = false; }}
+            class={`w-full px-4 py-2 rounded-lg text-sm font-medium transition-colors ${isDarkMode ? 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+          >
+            Close
+          </button>
+        </div>
+      {:else}
+        <!-- Edit Mode Content -->
+        <form
+          method="POST"
+          action="?/updateTask"
+          use:enhance={editTaskEnhanceCallback}
+          class="flex flex-col flex-1"
+        >
+          <input type="hidden" name="id" value={selectedTask.id} />
+          
+          <div class={`p-5 space-y-4 overflow-y-auto flex-1 ${isDarkMode ? 'text-zinc-300' : 'text-gray-700'}`}>
+            <!-- Title -->
+            <div>
+              <label class={`block text-xs font-medium uppercase tracking-wide mb-1 ${isDarkMode ? 'text-zinc-500' : 'text-gray-500'}`}>Title</label>
+              <input
+                type="text"
+                name="title"
+                bind:value={editTaskTitle}
+                required
+                class={`w-full px-3 py-2 rounded-lg border text-sm ${isDarkMode ? 'bg-zinc-700 border-zinc-600 text-zinc-100' : 'bg-white border-gray-300 text-gray-900'}`}
+                placeholder="Task title"
+              />
+            </div>
+            
+            <!-- Description -->
+            <div>
+              <label class={`block text-xs font-medium uppercase tracking-wide mb-1 ${isDarkMode ? 'text-zinc-500' : 'text-gray-500'}`}>Description</label>
+              <textarea
+                name="description"
+                bind:value={editTaskDescription}
+                rows="5"
+                class={`w-full px-3 py-2 rounded-lg border text-sm resize-none ${isDarkMode ? 'bg-zinc-700 border-zinc-600 text-zinc-100' : 'bg-white border-gray-300 text-gray-900'}`}
+                placeholder="Optional description"
+              ></textarea>
+            </div>
+            
+            <!-- Priority -->
+            <div>
+              <label class={`block text-xs font-medium uppercase tracking-wide mb-1 ${isDarkMode ? 'text-zinc-500' : 'text-gray-500'}`}>Priority</label>
+              <select
+                name="priority"
+                bind:value={editTaskPriority}
+                class={`w-full px-3 py-2 rounded-lg border text-sm ${isDarkMode ? 'bg-zinc-700 border-zinc-600 text-zinc-100' : 'bg-white border-gray-300 text-gray-900'}`}
+              >
+                <option value="low">🟢 Low</option>
+                <option value="standard">🔵 Standard</option>
+                <option value="high">🟠 High</option>
+                <option value="urgent">🔴 Urgent</option>
+              </select>
+            </div>
+            
+            <!-- Due Date/Time -->
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class={`block text-xs font-medium uppercase tracking-wide mb-1 ${isDarkMode ? 'text-zinc-500' : 'text-gray-500'}`}>Due Date</label>
+                <input
+                  type="date"
+                  name="dueDate"
+                  bind:value={editTaskDueDate}
+                  class={`w-full px-3 py-2 rounded-lg border text-sm ${isDarkMode ? 'bg-zinc-700 border-zinc-600 text-zinc-100' : 'bg-white border-gray-300 text-gray-900'}`}
+                />
+              </div>
+              <div>
+                <label class={`block text-xs font-medium uppercase tracking-wide mb-1 ${isDarkMode ? 'text-zinc-500' : 'text-gray-500'}`}>Due Time</label>
+                <input
+                  type="time"
+                  name="dueTime"
+                  bind:value={editTaskDueTime}
+                  class={`w-full px-3 py-2 rounded-lg border text-sm ${isDarkMode ? 'bg-zinc-700 border-zinc-600 text-zinc-100' : 'bg-white border-gray-300 text-gray-900'}`}
+                />
+              </div>
+            </div>
+          </div>
+          
+          <!-- Footer - Edit Mode -->
+          <div class={`px-5 py-3 border-t flex gap-2 ${isDarkMode ? 'border-zinc-700 bg-zinc-750' : 'border-gray-200 bg-gray-50'}`}>
+            <button
+              type="submit"
+              class={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2
+                ${isDarkMode ? 'bg-blue-600 text-white hover:bg-blue-500' : 'bg-blue-500 text-white hover:bg-blue-600'}`}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
+                <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+              </svg>
+              Save Changes
+            </button>
+            <button
+              type="button"
+              on:click={cancelEditTask}
+              class={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${isDarkMode ? 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      {/if}
+      </div>
+    </div>
+  {/if}
+
   {#if isSidebarOpen}
     <div
   id="sidebar"
@@ -673,10 +978,6 @@
             </svg>
             <span>Workspace</span>
           </a>
-          <a href="/ai-chat" class="flex items-center gap-3 px-3 py-2 rounded-md font-semibold transition-colors duration-150" class:hover:bg-gray-100={!isDarkMode} class:hover:bg-zinc-700={isDarkMode} class:text-gray-700={!isDarkMode} class:text-zinc-300={isDarkMode}>
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5" aria-hidden="true"><path d="M12.001 2.504a2.34 2.34 0 00-2.335 2.335v.583c0 .582.212 1.13.582 1.556l.03.035-.03.034a2.34 2.34 0 00-2.917 3.916A3.287 3.287 0 004.08 14.25a3.287 3.287 0 003.287 3.287h8.266a3.287 3.287 0 003.287-3.287 3.287 3.287 0 00-1.253-2.583 2.34 2.34 0 00-2.917-3.916l-.03-.034.03-.035c.37-.425.582-.973.582-1.555v-.583a2.34 2.34 0 00-2.335-2.336h-.002zM9.75 12.75a.75.75 0 000 1.5h4.5a.75.75 0 000-1.5h-4.5z" /><path fill-rule="evenodd" d="M12 1.5c5.79 0 10.5 4.71 10.5 10.5S17.79 22.5 12 22.5 1.5 17.79 1.5 12 6.21 1.5 12 1.5zM2.85 12a9.15 9.15 0 019.15-9.15 9.15 9.15 0 019.15 9.15 9.15 9.15 0 01-9.15 9.15A9.15 9.15 0 012.85 12z" clip-rule="evenodd" /></svg>
-            <span>Ask Synthia</span>
-          </a>
         </nav>
       </div>
       <button on:click={handleLogout} class="flex items-center gap-3 px-3 py-2 rounded-md font-semibold w-full mt-auto transition-colors duration-150" class:hover:bg-gray-100={!isDarkMode} class:hover:bg-zinc-700={isDarkMode} class:text-gray-700={!isDarkMode} class:text-zinc-300={isDarkMode}>
@@ -692,93 +993,147 @@
     <div class="flex-1 overflow-y-auto pt-[60px] pb-20 flex flex-col">
 
       <div class="px-4 sm:px-6 mt-6">
-        <h1 class={`text-2xl sm:text-3xl font-bold ${isDarkMode ? 'text-zinc-100' : 'text-gray-800'}`}>{greeting}, <span class={`${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`}>{username.toUpperCase()}</span>!</h1>
+        <div class="greeting-hero mb-2">
+          <h1 class={`text-2xl sm:text-3xl font-bold ${isDarkMode ? 'text-zinc-100' : 'text-gray-800'}`}>
+            {greeting}, <span class={`${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`}>{username.toUpperCase()}</span>!
+          </h1>
+          <p class={`text-sm mt-1 ${isDarkMode ? 'text-zinc-400' : 'text-gray-500'}`}>
+            {#if data?.tasks && data.tasks.length > 0}
+              You have <span class="font-semibold text-blue-500">{data.tasks.length}</span> task{data.tasks.length === 1 ? '' : 's'} due today. Let's get it done!
+            {:else}
+              {getRandomMessage()}
+            {/if}
+          </p>
+        </div>
       </div>
 
       <main class="px-4 sm:px-6 mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6 flex-grow">
         <section class="flex flex-col gap-6">
-          <div class={`border rounded-lg p-4 shadow-sm flex flex-col ${isDarkMode ? 'bg-zinc-700 border-zinc-600' : 'bg-white border-gray-200'}`}>
-            <div class="flex justify-between items-center mb-3 flex-shrink-0">
-              <h2 class={`text-lg font-semibold ${isDarkMode ? 'text-zinc-100' : 'text-gray-700'}`}>Quick access</h2>
+          <div class={`quick-access-card border rounded-xl p-4 shadow-sm ${isDarkMode ? 'bg-zinc-700 border-zinc-600' : 'bg-white border-gray-200'}`}>
+            <div class="flex justify-between items-center mb-4">
+              <h2 class={`text-lg font-semibold ${isDarkMode ? 'text-zinc-100' : 'text-gray-700'}`}>
+                Quick Access
+              </h2>
             </div>
-            <div class="space-y-2 flex-grow overflow-y-auto mb-4 pr-2 -mr-2 custom-scrollbar">
-              <a href="/calendar" class={`block rounded-lg px-4 py-2.5 shadow-xs transition-colors duration-150 ${isDarkMode ? 'bg-zinc-600 border border-zinc-500 hover:bg-zinc-500 text-zinc-300' : 'bg-white border border-gray-200 hover:bg-gray-50 text-gray-800'}`}>
-                <div class="flex items-center gap-3">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5 text-blue-500 dark:text-blue-400" aria-hidden="true"><path fill-rule="evenodd" d="M6.75 2.25A.75.75 0 017.5 3v1.5h9V3A.75.75 0 0118 3v1.5h.75a3 3 0 013 3v11.25a3 3 0 01-3 3H5.25a3 3 0 01-3-3V7.5a3 3 0 013-3H6V3a.75.75 0 01.75-.75zM5.25 6.75c-.621 0-1.125.504-1.125 1.125V18a1.125 1.125 0 001.125 1.125h13.5A1.125 1.125 0 0019.875 18V7.875c0-.621-.504-1.125-1.125-1.125H5.25z" clip-rule="evenodd" /><path d="M10.5 9.75a.75.75 0 00-1.5 0v.01c0 .414.336.75.75.75H10.5v-.01a.75.75 0 000-1.5zM10.5 12.75a.75.75 0 00-1.5 0v.01c0 .414.336.75.75.75H10.5v-.01a.75.75 0 000-1.5zM10.5 15.75a.75.75 0 00-1.5 0v.01c0 .414.336.75.75.75H10.5v-.01a.75.75 0 000-1.5zM13.5 9.75a.75.75 0 00-1.5 0v.01c0 .414.336.75.75.75H13.5v-.01a.75.75 0 000-1.5zM13.5 12.75a.75.75 0 00-1.5 0v.01c0 .414.336.75.75.75H13.5v-.01a.75.75 0 000-1.5zM13.5 15.75a.75.75 0 00-1.5 0v.01c0 .414.336.75.75.75H13.5v-.01a.75.75 0 000-1.5zM16.5 9.75a.75.75 0 00-1.5 0v.01c0 .414.336.75.75.75H16.5v-.01a.75.75 0 000-1.5zM16.5 12.75a.75.75 0 00-1.5 0v.01c0 .414.336.75.75.75H16.5v-.01a.75.75 0 000-1.5zM16.5 15.75a.75.75 0 00-1.5 0v.01c0 .414.336.75.75.75H16.5v-.01a.75.75 0 000-1.5z"/></svg>
-                  <span class="text-base font-medium">Calendar</span>
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <a href="/calendar" class={`quick-link-card group flex flex-col items-center justify-center p-4 rounded-xl transition-all duration-200 hover:-translate-y-1 hover:shadow-lg ${isDarkMode ? 'bg-zinc-600 hover:bg-zinc-550 border border-zinc-500' : 'bg-gradient-to-br from-blue-50 to-blue-100/50 hover:from-blue-100 hover:to-blue-200/50 border border-blue-200/50'}`}>
+                <div class={`w-10 h-10 rounded-xl flex items-center justify-center mb-2 ${isDarkMode ? 'bg-blue-500/20' : 'bg-blue-500/10'}`}>
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5 text-blue-500" aria-hidden="true"><path fill-rule="evenodd" d="M6.75 2.25A.75.75 0 017.5 3v1.5h9V3A.75.75 0 0118 3v1.5h.75a3 3 0 013 3v11.25a3 3 0 01-3 3H5.25a3 3 0 01-3-3V7.5a3 3 0 013-3H6V3a.75.75 0 01.75-.75zM5.25 6.75c-.621 0-1.125.504-1.125 1.125V18a1.125 1.125 0 001.125 1.125h13.5A1.125 1.125 0 0019.875 18V7.875c0-.621-.504-1.125-1.125-1.125H5.25z" clip-rule="evenodd" /></svg>
                 </div>
+                <span class={`text-sm font-medium ${isDarkMode ? 'text-zinc-300' : 'text-gray-700'}`}>Calendar</span>
               </a>
-              <a href="/kanban" class={`block rounded-lg px-4 py-2.5 shadow-xs transition-colors duration-150 ${isDarkMode ? 'bg-zinc-600 border border-zinc-500 hover:bg-zinc-500 text-zinc-300' : 'bg-white border border-gray-200 hover:bg-gray-50 text-gray-800'}`}>
-                <div class="flex items-center gap-3">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5 text-green-500 dark:text-green-400" aria-hidden="true"><path fill-rule="evenodd" d="M2.25 5.25A3 3 0 015.25 2.25h13.5a3 3 0 013 3V12a3 3 0 01-3 3H5.25a3 3 0 01-3-3V5.25zm1.5 0v6.75c0 .828.672 1.5 1.5 1.5h13.5c.828 0 1.5-.672 1.5-1.5V5.25c0-.828-.672-1.5-1.5-1.5H5.25c-.828 0-1.5.672-1.5 1.5zM9 18.75a.75.75 0 000 1.5h6a.75.75 0 000-1.5H9z" clip-rule="evenodd" /></svg>
-                  <span class="text-base font-medium">Tasks</span>
+              <a href="/kanban" class={`quick-link-card group flex flex-col items-center justify-center p-4 rounded-xl transition-all duration-200 hover:-translate-y-1 hover:shadow-lg ${isDarkMode ? 'bg-zinc-600 hover:bg-zinc-550 border border-zinc-500' : 'bg-gradient-to-br from-green-50 to-green-100/50 hover:from-green-100 hover:to-green-200/50 border border-green-200/50'}`}>
+                <div class={`w-10 h-10 rounded-xl flex items-center justify-center mb-2 ${isDarkMode ? 'bg-green-500/20' : 'bg-green-500/10'}`}>
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5 text-green-500" aria-hidden="true"><path fill-rule="evenodd" d="M7.502 6h7.128A3.375 3.375 0 0118 9.375v9.375a3 3 0 003-3V6.108c0-1.505-1.125-2.811-2.664-2.94a48.972 48.972 0 00-.673-.05A3 3 0 0015 1.5h-1.5a3 3 0 00-2.663 1.618c-.225.015-.45.032-.673.05C8.662 3.297 7.5 4.603 7.5 6.108V6zM13.5 3a1.5 1.5 0 011.5 1.5H12A1.5 1.5 0 0113.5 3z" clip-rule="evenodd" /><path fill-rule="evenodd" d="M3 9.375C3 8.339 3.84 7.5 4.875 7.5h9.75c1.036 0 1.875.84 1.875 1.875v11.25c0 1.035-.84 1.875-1.875 1.875h-9.75A1.875 1.875 0 013 20.625V9.375zm9.586 4.594a.75.75 0 00-1.172-.938l-2.476 3.096-.908-.907a.75.75 0 00-1.06 1.06l1.5 1.5a.75.75 0 001.116-.062l3-3.75z" clip-rule="evenodd" /></svg>
                 </div>
+                <span class={`text-sm font-medium ${isDarkMode ? 'text-zinc-300' : 'text-gray-700'}`}>Tasks</span>
+              </a>
+              <a href="/dashboard" class={`quick-link-card group flex flex-col items-center justify-center p-4 rounded-xl transition-all duration-200 hover:-translate-y-1 hover:shadow-lg ${isDarkMode ? 'bg-zinc-600 hover:bg-zinc-550 border border-zinc-500' : 'bg-gradient-to-br from-purple-50 to-purple-100/50 hover:from-purple-100 hover:to-purple-200/50 border border-purple-200/50'}`}>
+                <div class={`w-10 h-10 rounded-xl flex items-center justify-center mb-2 ${isDarkMode ? 'bg-purple-500/20' : 'bg-purple-500/10'}`}>
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5 text-purple-500" aria-hidden="true"><path d="M18.375 2.25c-1.035 0-1.875.84-1.875 1.875v15.75c0 1.035.84 1.875 1.875 1.875h.75c1.035 0 1.875-.84 1.875-1.875V4.125c0-1.036-.84-1.875-1.875-1.875h-.75zM9.75 8.625c0-1.036.84-1.875 1.875-1.875h.75c1.036 0 1.875.84 1.875 1.875v11.25c0 1.035-.84 1.875-1.875 1.875h-.75a1.875 1.875 0 01-1.875-1.875V8.625zM3 13.125c0-1.036.84-1.875 1.875-1.875h.75c1.036 0 1.875.84 1.875 1.875v6.75c0 1.035-.84 1.875-1.875 1.875h-.75A1.875 1.875 0 013 19.875v-6.75z" /></svg>
+                </div>
+                <span class={`text-sm font-medium ${isDarkMode ? 'text-zinc-300' : 'text-gray-700'}`}>Dashboard</span>
+              </a>
+              <a href="/workspace" class={`quick-link-card group flex flex-col items-center justify-center p-4 rounded-xl transition-all duration-200 hover:-translate-y-1 hover:shadow-lg ${isDarkMode ? 'bg-zinc-600 hover:bg-zinc-550 border border-zinc-500' : 'bg-gradient-to-br from-orange-50 to-orange-100/50 hover:from-orange-100 hover:to-orange-200/50 border border-orange-200/50'}`}>
+                <div class={`w-10 h-10 rounded-xl flex items-center justify-center mb-2 ${isDarkMode ? 'bg-orange-500/20' : 'bg-orange-500/10'}`}>
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5 text-orange-500" aria-hidden="true"><path fill-rule="evenodd" d="M8.25 6.75a3.75 3.75 0 117.5 0 3.75 3.75 0 01-7.5 0zM15.75 9.75a3 3 0 116 0 3 3 0 01-6 0zM2.25 9.75a3 3 0 116 0 3 3 0 01-6 0zM6.31 15.117A6.745 6.745 0 0112 12a6.745 6.745 0 016.709 7.498.75.75 0 01-.372.568A12.696 12.696 0 0112 21.75c-2.305 0-4.47-.612-6.337-1.684a.75.75 0 01-.372-.568 6.787 6.787 0 011.019-4.38z" clip-rule="evenodd" /><path d="M5.082 14.254a8.287 8.287 0 00-1.308 5.135 9.687 9.687 0 01-1.764-.44l-.115-.04a.563.563 0 01-.373-.487l-.01-.121a3.75 3.75 0 013.57-4.047zM20.226 19.389a8.287 8.287 0 00-1.308-5.135 3.75 3.75 0 013.57 4.047l-.01.121a.563.563 0 01-.373.486l-.115.04c-.567.2-1.156.349-1.764.441z" /></svg>
+                </div>
+                <span class={`text-sm font-medium ${isDarkMode ? 'text-zinc-300' : 'text-gray-700'}`}>Workspace</span>
               </a>
             </div>
           </div>
 
-          <div class={`border rounded-lg p-4 shadow-sm relative flex flex-col ${isDarkMode ? 'bg-zinc-700 border-zinc-600' : 'bg-white border-gray-200'}`}>
-            <div class="flex justify-between items-center mb-3 flex-shrink-0">
-              <h2 class={`text-lg font-semibold ${isDarkMode ? 'text-zinc-100' : 'text-gray-700'}`}>Tasks that are due today</h2>
+
+          <div class={`border rounded-xl p-4 shadow-sm relative flex flex-col ${isDarkMode ? 'bg-zinc-700 border-zinc-600' : 'bg-white border-gray-200'}`}>
+            <div class="flex justify-between items-center mb-4 flex-shrink-0">
+              <h2 class={`text-lg font-semibold flex items-center gap-2 ${isDarkMode ? 'text-zinc-100' : 'text-gray-700'}`}>
+                Today's Tasks
+                {#if data?.tasks && data.tasks.length > 0}
+                  <span class={`text-xs font-normal px-2 py-0.5 rounded-full ${isDarkMode ? 'bg-blue-500/20 text-blue-400' : 'bg-blue-100 text-blue-600'}`}>
+                    {data.tasks.length}
+                  </span>
+                {/if}
+              </h2>
             </div>
-            <div class="space-y-2 flex-grow overflow-y-auto mb-4 pr-2 -mr-2 custom-scrollbar">
+            <div class="space-y-2 flex-grow overflow-y-auto mb-4 pr-2 -mr-2 pt-1 pb-1 custom-scrollbar">
               {#if data?.tasks && data.tasks.length > 0}
                 {#each data.tasks as task (task.id)}
-                  <form
-                    method="POST"
-                    action="?/toggleTask"
-                    use:enhance={taskFormEnhanceCallback}
-                    class={`flex justify-between items-center rounded-lg px-4 py-2 shadow-xs ${isDarkMode ? 'bg-zinc-600 border border-zinc-500' : 'bg-white border-gray-200'}`}
+                  <div
+                    class={`task-item-card flex items-center gap-3 rounded-xl px-4 py-3 cursor-pointer transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-lg
+                      ${isDarkMode ? 'bg-zinc-600 border border-zinc-500 hover:bg-zinc-550' : 'bg-gradient-to-r from-white to-gray-50/50 border border-gray-200 hover:border-gray-300 hover:shadow-md'}`}
+                    on:click={() => selectedTask = task}
+                    on:keydown={(e) => e.key === 'Enter' && (selectedTask = task)}
+                    role="button"
+                    tabindex="0"
                   >
-                    <input type="hidden" name="id" value={task.id} />
-                    <div class="flex items-center gap-2 flex-grow mr-2 overflow-hidden">
-                      <input
-                        type="checkbox"
-                        name="isCompleted"
-                        checked={task.isCompleted}
-                        on:change|preventDefault={(e) => { e.currentTarget?.form?.requestSubmit(); }}
-                        class="rounded border-gray-300 dark:border-zinc-600 text-blue-600 dark:text-blue-500 focus:ring-blue-500 dark:focus:ring-blue-400 h-4 w-4 flex-shrink-0 cursor-pointer bg-white dark:bg-zinc-700 checked:bg-blue-600 dark:checked:bg-blue-500"
-                        aria-label={`Mark task ${task.isCompleted ? 'incomplete' : 'complete'}`}
-                      />
+                    <!-- Priority indicator -->
+                    <div class={`priority-dot w-2.5 h-2.5 rounded-full flex-shrink-0 ${
+                      task.priority === 'urgent' ? 'bg-red-500' :
+                      task.priority === 'high' ? 'bg-orange-500' :
+                      task.priority === 'low' ? 'bg-green-500' :
+                      'bg-blue-500'
+                    }`}></div>
+                    
+                    <div class="flex flex-col flex-grow overflow-hidden">
                       <span
                         class:line-through={task.isCompleted}
-                        class:text-gray-500={task.isCompleted && !isDarkMode}
-                        class:text-zinc-400={task.isCompleted && isDarkMode}
+                        class:opacity-60={task.isCompleted}
                         class={`font-medium text-sm truncate ${isDarkMode ? 'text-zinc-200' : 'text-gray-800'}`}
-                        title={task.description}
                       >
-                        {task.description}
+                        {task.title || task.description || 'No Title'}
                       </span>
-                      {#if task.dueDate}
-                        <span class={`text-xs flex-shrink-0 ml-auto ${isDarkMode ? 'text-zinc-400' : 'text-gray-400'}`}>
-                          Due: {new Date(task.dueDate).toLocaleDateString()}
+                      {#if task.dueTime}
+                        <span class={`text-xs ${isDarkMode ? 'text-zinc-400' : 'text-gray-500'}`}>
+                          Due: {(() => {
+                            const [h, m] = (task.dueTime || '').split(':');
+                            const hour = parseInt(h);
+                            const ampm = hour >= 12 ? 'PM' : 'AM';
+                            const h12 = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
+                            return `${h12}:${m} ${ampm}`;
+                          })()}
                         </span>
                       {/if}
                     </div>
-                  </form>
+                    <!-- Chevron icon -->
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class={`w-4 h-4 flex-shrink-0 transition-transform group-hover:translate-x-0.5 ${isDarkMode ? 'text-zinc-400' : 'text-gray-400'}`}>
+                      <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+                    </svg>
+                  </div>
                 {/each}
               {:else if data?.tasks}
-                <p class={`italic text-sm ${isDarkMode ? 'text-zinc-400' : 'text-gray-500'}`}>No tasks today? Enjoy the calm before the next storm of productivity!</p>
+                <div class={`text-center py-8 ${isDarkMode ? 'text-zinc-400' : 'text-gray-500'}`}>
+                  <p class="text-sm">No tasks due today!</p>
+                  <p class="text-xs mt-1 opacity-75">{getRandomMessage()}</p>
+                </div>
               {:else if !data?.error}
                 <p class={`italic text-sm ${isDarkMode ? 'text-zinc-400' : 'text-gray-500'}`}>Loading tasks...</p>
               {/if}
             </div>
-            <a href="/kanban" class={`text-sm hover:underline mt-auto pt-2 flex-shrink-0 ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`}>View all tasks</a>
-            {#if !showTaskForm}
-              
-            {/if}
+            <a href="/kanban" class={`text-sm font-medium hover:underline mt-auto pt-2 flex-shrink-0 flex items-center gap-1 ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`}>
+              View all tasks
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-3.5 h-3.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" />
+              </svg>
+            </a>
           </div>
         </section>
 
-        <section class={`notes-section rounded-lg p-4 flex flex-col justify-between relative shadow-sm ${isDarkMode ? 'bg-zinc-700 border border-zinc-600' : 'bg-white border border-gray-200'}`}>
-          <div class="flex justify-between items-center mb-3 flex-shrink-0">
-            <h2 class={`text-lg font-semibold ${isDarkMode ? 'text-zinc-100' : 'text-gray-700'}`}>Notes</h2>
+        <section class={`notes-section rounded-xl p-4 flex flex-col justify-between relative shadow-sm ${isDarkMode ? 'bg-zinc-700 border border-zinc-600' : 'bg-white border border-gray-200'}`}>
+          <div class="flex justify-between items-center mb-4 flex-shrink-0">
+            <h2 class={`text-lg font-semibold flex items-center gap-2 ${isDarkMode ? 'text-zinc-100' : 'text-gray-700'}`}>
+              Notes
+              {#if data?.notes && data.notes.length > 0}
+                <span class={`text-xs font-normal px-2 py-0.5 rounded-full ${isDarkMode ? 'bg-yellow-500/20 text-yellow-400' : 'bg-yellow-100 text-yellow-700'}`}>
+                  {data.notes.length}
+                </span>
+              {/if}
+            </h2>
             <div class="flex items-center gap-1">
               <button
                 type="button"
                 on:click={refreshData}
                 disabled={isRefreshingNotes || isRefreshingTasks}
-                class={`p-1 rounded-full disabled:opacity-50 disabled:cursor-wait transition-colors ${isDarkMode ? 'hover:bg-zinc-600 text-zinc-400' : 'hover:bg-gray-200 text-gray-500'}`}
+                class={`p-1.5 rounded-lg disabled:opacity-50 disabled:cursor-wait transition-colors ${isDarkMode ? 'hover:bg-zinc-600 text-zinc-400' : 'hover:bg-gray-100 text-gray-500'}`}
                 aria-label="Refresh Data"
               >
                 {#if isRefreshingNotes || isRefreshingTasks}
@@ -790,7 +1145,7 @@
               <button
                 type="button"
                 on:click={openAddNoteForm}
-                class="ml-2 bg-blue-600 text-white rounded-full p-2.5 w-10 h-10 flex items-center justify-center shadow-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all duration-150 ease-in-out z-20 transform hover:scale-105"
+                class="ml-1 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-xl p-2.5 w-10 h-10 flex items-center justify-center shadow-lg hover:from-blue-600 hover:to-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all duration-150 ease-in-out z-20 transform hover:scale-105"
                 aria-label="Add New Note"
                 transition:scale={{ duration: 150, start: 0.8, opacity: 0.5 }}
               >
@@ -804,7 +1159,7 @@
             {:else if data?.notes && data.notes.length > 0}
               <div class="space-y-3">
                 {#each data.notes as note (note.id)}
-                  <div class={`rounded-lg p-3 flex justify-between items-start group relative shadow-xs ${isDarkMode ? 'bg-zinc-600 border-zinc-500' : 'bg-white border-gray-200'}`}>
+                  <div class={`note-card rounded-xl p-3.5 flex justify-between items-start group relative transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md ${isDarkMode ? 'bg-zinc-600 border border-zinc-500 hover:bg-zinc-550' : 'bg-gradient-to-br from-yellow-50/50 to-amber-50/30 border border-yellow-200/50 hover:border-yellow-300/70'}`}>
                     <div class="flex-grow pr-2 overflow-hidden">
                       <h3 class={`font-semibold text-base truncate ${isDarkMode ? 'text-zinc-100' : 'text-gray-800'}`}>{note.title}</h3>
                       {#if expandedNoteId !== note.id}
@@ -855,52 +1210,37 @@
         </section>
       </main>
 
-      <div id="aiChatToggle" class="fixed bottom-10 right-16 w-16 h-16 cursor-pointer z-40 transition-opacity duration-200">
-        <button class="w-full h-full bg-purple-600 rounded-full shadow-lg flex items-center justify-center hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 transform hover:scale-105 transition-all duration-150" aria-label="Toggle AI Chat">
-          <img src="/Ai.png" alt="Ask Synthia AI" class="w-9 h-9" />
-        </button>
-        <div id="aiSpeechBubble" class="ai-speech-bubble">
-         
-        </div>
-      </div>
-
-      <div 
-        id="aiChatWindow" 
-        class={`fixed transition-all duration-300 ease-in-out rounded-lg shadow-2xl hidden z-[70] flex flex-col overflow-hidden ${isDarkMode ? 'bg-zinc-900 border-zinc-700 text-zinc-300' : 'bg-white border-gray-200 text-gray-800'}`} 
-        style="bottom: 100px; right: 16px; width: 380px; height: 480px; max-width: 90vw; max-height: calc(100vh - 120px);"
-      >
-        <div id="aiExpandedLogo" class="hidden absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 opacity-5 pointer-events-none">
-           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-48 h-48 sm:w-64 sm:h-64" aria-hidden="true"><path d="M12.001 2.504a2.34 2.34 0 00-2.335 2.335v.583c0 .582.212 1.13.582 1.556l.03.035-.03.034a2.34 2.34 0 00-2.917 3.916A3.287 3.287 0 004.08 14.25a3.287 3.287 0 003.287 3.287h8.266a3.287 3.287 0 003.287-3.287 3.287 3.287 0 00-1.253-2.583 2.34 2.34 0 00-2.917-3.916l-.03-.034.03-.035c.37-.425.582-.973.582-1.555v-.583a2.34 2.34 0 00-2.335-2.336h-.002zM9.75 12.75a.75.75 0 000 1.5h4.5a.75.75 0 000-1.5h-4.5z" /><path fill-rule="evenodd" d="M12 1.5c5.79 0 10.5 4.71 10.5 10.5S17.79 22.5 12 22.5 1.5 17.79 1.5 12 6.21 1.5 12 1.5zM2.85 12a9.15 9.15 0 019.15-9.15 9.15 9.15 0 019.15 9.15 9.15 9.15 0 01-9.15 9.15A9.15 9.15 0 012.85 12z" clip-rule="evenodd" /></svg>
-        </div>
-        <div 
-          id="aiChatHeader" 
-          class={`flex justify-between items-center px-3 py-2 border-b flex-shrink-0 ${isDarkMode ? 'bg-zinc-600 border-zinc-600' : 'bg-gray-50 border-gray-200'}`}
-        >
-          <div class="w-8"></div> 
-          <span class="text-sm font-semibold flex-grow text-center">Ask Synthia</span>
-          <div class="flex items-center">
-            <button id="closeChat" class={`p-1.5 rounded-md ${isDarkMode ? 'hover:bg-zinc-600 text-zinc-400' : 'hover:bg-gray-200 text-gray-500'}`} aria-label="Close Chat">
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5"> <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /> </svg>
-            </button>
-          </div>
-        </div>
-        <div class="flex-1 flex flex-col p-4 space-y-3 overflow-y-auto custom-scrollbar" id="chatMessages">
-          <div class="initial-prompt w-full h-full flex flex-col justify-center items-center text-center">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-16 h-16 mb-4 opacity-50" aria-hidden="true"><path d="M12.001 2.504a2.34 2.34 0 00-2.335 2.335v.583c0 .582.212 1.13.582 1.556l.03.035-.03.034a2.34 2.34 0 00-2.917 3.916A3.287 3.287 0 004.08 14.25a3.287 3.287 0 003.287 3.287h8.266a3.287 3.287 0 003.287-3.287 3.287 3.287 0 00-1.253-2.583 2.34 2.34 0 00-2.917-3.916l-.03-.034.03-.035c.37-.425.582-.973.582-1.555v-.583a2.34 2.34 0 00-2.335-2.336h-.002zM9.75 12.75a.75.75 0 000 1.5h4.5a.75.75 0 000-1.5h-4.5z" /><path fill-rule="evenodd" d="M12 1.5c5.79 0 10.5 4.71 10.5 10.5S17.79 22.5 12 22.5 1.5 17.79 1.5 12 6.21 1.5 12 1.5zM2.85 12a9.15 9.15 0 019.15-9.15 9.15 9.15 0 019.15 9.15 9.15 9.15 0 01-9.15 9.15A9.15 9.15 0 012.85 12z" clip-rule="evenodd" /></svg>
-            <h2 class="text-lg font-semibold mb-3 initial-prompt-title">How can I help?</h2>
-            
-          </div>
-        </div>
-        <div class={`px-4 py-3 border-t flex-shrink-0 ${isDarkMode ? 'bg-zinc-600 border-zinc-600' : 'bg-gray-50 border-gray-200'}`}>
-          <div class="flex items-center gap-2 w-full">
-            <input id="chatInput" type="text" placeholder="Ask anything..." class={`w-full rounded-full px-4 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-sm flex-grow h-9 ${isDarkMode ? 'bg-zinc-800 border-zinc-700 text-zinc-300 placeholder-zinc-500' : 'bg-white border-gray-300 text-gray-800 placeholder-gray-400'}`}/>
-            <button id="sendChat" class="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 w-9 h-9 flex items-center justify-center" aria-label="Send Message">
-              <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 16 16" class="w-4 h-4"><path d="M15.854.146a.5.5 0 0 1 .11.54l-5.819 14.547a.75.75 0 0 1-1.329.124l-3.178-4.995L.643 7.184a.75.75 0 0 1 .124-1.33L15.314.037a.5.5 0 0 1 .54.11ZM6.636 10.07l2.761 4.338L14.13 2.576zm6.787-8.201L1.591 6.602l4.339 2.76z"/></svg>
-            </button>
-          </div>
-        </div>
-        <div id="resizeHandle" class="absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize z-10"></div>
-      </div>
+      <!-- Calendar AI Panel -->
+      <CalendarAIPanel
+        {isDarkMode}
+        tasks={data?.tasks || []}
+        bind:isOpen={isAIPanelOpen}
+        on:createTask={async (e) => {
+          const task = e.detail;
+          const formData = new FormData();
+          formData.append('title', task.title);
+          formData.append('description', task.description || '');
+          formData.append('dueDate', task.dueDate);
+          if (task.dueTime) formData.append('dueTime', task.dueTime);
+          formData.append('priority', task.priority || 'standard');
+          
+          try {
+            const response = await fetch('?/addTask', {
+              method: 'POST',
+              body: formData
+            });
+            if (response.ok) {
+              await invalidateAll();
+            }
+          } catch (error) {
+            console.error('Error creating task from AI:', error);
+          }
+        }}
+        on:selectTask={(e) => {
+          // Navigate to tasks page with task ID to open the task there
+          goto(`/tasks?taskId=${e.detail.taskId}`);
+        }}
+      />
     </div>
   </div>
 

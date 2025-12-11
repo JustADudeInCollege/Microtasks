@@ -9,12 +9,14 @@
     import { fly } from 'svelte/transition';
     import { quintOut } from 'svelte/easing';
     import AppHeader from '$lib/components/AppHeader.svelte';
+    import CalendarAIPanel from '$lib/components/CalendarAIPanel.svelte';
 
 	export let data: import('./$types').PageData;
 
 	let username: string = data.user?.name || 'User';
 	let isSidebarOpen = false;
 	let isDarkMode = false; // This will control the body.dark class
+	let isAIPanelOpen = false;
 	let currentDateTime = "";
 
 	$: dashboardStats = data.dashboardStats;
@@ -292,13 +294,6 @@
             </svg>
             <span>Workspace</span>
           </a>
-          <a href="/ai-chat"
-            class="nav-link flex items-center gap-3 px-3 py-2 rounded-md font-semibold transition-colors duration-150"
-            class:active={$page.url.pathname === '/ai-chat'}
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5" aria-hidden="true"><path d="M12.001 2.504a2.34 2.34 0 00-2.335 2.335v.583c0 .582.212 1.13.582 1.556l.03.035-.03.034a2.34 2.34 0 00-2.917 3.916A3.287 3.287 0 004.08 14.25a3.287 3.287 0 003.287 3.287h8.266a3.287 3.287 0 003.287-3.287 3.287 3.287 0 00-1.253-2.583 2.34 2.34 0 00-2.917-3.916l-.03-.034.03-.035c.37-.425.582-.973.582-1.555v-.583a2.34 2.34 0 00-2.335-2.336h-.002zM9.75 12.75a.75.75 0 000 1.5h4.5a.75.75 0 000-1.5h-4.5z" /><path fill-rule="evenodd" d="M12 1.5c5.79 0 10.5 4.71 10.5 10.5S17.79 22.5 12 22.5 1.5 17.79 1.5 12 6.21 1.5 12 1.5zM2.85 12a9.15 9.15 0 019.15-9.15 9.15 9.15 0 019.15 9.15 9.15 9.15 0 01-9.15 9.15A9.15 9.15 0 012.85 12z" clip-rule="evenodd" /></svg>
-            <span>Ask Synthia</span>
-          </a>
         </nav>
       </div>
 			<button on:click={handleLogout} class="logout-button flex items-center gap-3 px-3 py-2 rounded-md font-semibold w-full mt-auto transition-colors duration-150">
@@ -312,7 +307,9 @@
 	<AppHeader {isDarkMode} {username} {currentDateTime} on:toggleSidebar={toggleSidebar} on:toggleDarkMode={toggleDarkMode} on:logout={handleLogout} />
 
 		<main class="main-content flex-1 overflow-x-hidden overflow-y-auto p-4 md:p-6 relative">
-      <h1 class="dashboard-title text-2xl font-bold mb-4">Dashboard</h1>
+      <div class="dashboard-header flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
+        <h1 class="dashboard-title text-2xl font-bold">Dashboard</h1>
+      </div>
 
 			{#if pageError}
 				<div class="error-alert border px-4 py-3 rounded relative mb-4" role="alert">
@@ -321,9 +318,85 @@
 			{/if}
 
 			{#if dashboardStats}
+        <!-- Hero Stats Row -->
+        <div class="hero-stats-grid grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          <!-- Productivity Score -->
+          <div class="stat-card stat-card-productivity p-4 md:p-5 rounded-xl shadow-lg">
+            <div class="stat-icon-wrapper productivity-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-6 h-6">
+                <path fill-rule="evenodd" d="M12.516 2.17a.75.75 0 00-1.032 0 11.209 11.209 0 01-7.877 3.08.75.75 0 00-.722.515A12.74 12.74 0 002.25 9.75c0 5.942 4.064 10.933 9.563 12.348a.75.75 0 00.374 0c5.499-1.415 9.563-6.406 9.563-12.348 0-1.39-.223-2.73-.635-3.985a.75.75 0 00-.722-.516 11.209 11.209 0 01-7.877-3.08z" clip-rule="evenodd" />
+              </svg>
+            </div>
+            <div class="stat-value text-3xl font-bold">{dashboardStats.productivityScore}<span class="text-lg opacity-60">%</span></div>
+            <div class="stat-label text-sm opacity-70">Productivity Score</div>
+            <div class="stat-progress mt-2">
+              <div class="progress-bar" style="width: {dashboardStats.productivityScore}%"></div>
+            </div>
+          </div>
+
+          <!-- Current Streak -->
+          <div class="stat-card stat-card-streak p-4 md:p-5 rounded-xl shadow-lg">
+            <div class="stat-icon-wrapper streak-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-6 h-6">
+                <path fill-rule="evenodd" d="M12.963 2.286a.75.75 0 00-1.071-.136 9.742 9.742 0 00-3.539 6.176 7.547 7.547 0 01-1.705-1.715.75.75 0 00-1.152-.082A9 9 0 1021 12.504a.75.75 0 00-.783-.678 9.016 9.016 0 01-3.768-1.036.75.75 0 00-.951.228 7.509 7.509 0 01-2.535 2.268z" clip-rule="evenodd" />
+              </svg>
+            </div>
+            <div class="stat-value text-3xl font-bold">{dashboardStats.currentStreak}<span class="text-lg opacity-60"> days</span></div>
+            <div class="stat-label text-sm opacity-70">Current Streak</div>
+          </div>
+
+          <!-- Tasks Done Today -->
+          <div class="stat-card stat-card-today p-4 md:p-5 rounded-xl shadow-lg">
+            <div class="stat-icon-wrapper today-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-6 h-6">
+                <path fill-rule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12zm13.36-1.814a.75.75 0 10-1.22-.872l-3.236 4.53L9.53 12.22a.75.75 0 00-1.06 1.06l2.25 2.25a.75.75 0 001.14-.094l3.75-5.25z" clip-rule="evenodd" />
+              </svg>
+            </div>
+            <div class="stat-value text-3xl font-bold">{dashboardStats.tasksDoneToday}</div>
+            <div class="stat-label text-sm opacity-70">Done Today</div>
+          </div>
+
+          <!-- Due Today / Overdue -->
+          <div class="stat-card stat-card-alert p-4 md:p-5 rounded-xl shadow-lg">
+            <div class="stat-icon-wrapper alert-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-6 h-6">
+                <path fill-rule="evenodd" d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25zM12.75 6a.75.75 0 00-1.5 0v6c0 .414.336.75.75.75h4.5a.75.75 0 000-1.5h-3.75V6z" clip-rule="evenodd" />
+              </svg>
+            </div>
+            <div class="stat-value text-3xl font-bold">{dashboardStats.tasksDueToday}</div>
+            <div class="stat-label text-sm opacity-70">Due Today</div>
+            {#if dashboardStats.overdueTasks > 0}
+              <div class="overdue-badge mt-1">{dashboardStats.overdueTasks} overdue</div>
+            {/if}
+          </div>
+        </div>
+
+        <!-- Quick Summary Cards Row -->
+        <div class="summary-grid grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+          <div class="mini-stat-card p-3 rounded-lg">
+            <div class="mini-stat-value text-xl font-bold">{dashboardStats.totalTasks}</div>
+            <div class="mini-stat-label text-xs opacity-60">Total Tasks</div>
+          </div>
+          <div class="mini-stat-card p-3 rounded-lg">
+            <div class="mini-stat-value text-xl font-bold">{dashboardStats.pendingTasks}</div>
+            <div class="mini-stat-label text-xs opacity-60">Pending</div>
+          </div>
+          <div class="mini-stat-card p-3 rounded-lg">
+            <div class="mini-stat-value text-xl font-bold">{dashboardStats.completionRate}%</div>
+            <div class="mini-stat-label text-xs opacity-60">Completion Rate</div>
+          </div>
+          <div class="mini-stat-card p-3 rounded-lg">
+            <div class="mini-stat-value text-xl font-bold">{dashboardStats.avgTasksPerDay}</div>
+            <div class="mini-stat-label text-xs opacity-60">Avg/Day This Week</div>
+          </div>
+        </div>
+
+        <!-- Charts Row -->
 				<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 md:gap-6 pb-16">
 					<div class="chart-card p-4 md:p-6 rounded-xl shadow-lg flex flex-col">
-						<h2 class="chart-title chart-title-completed text-lg font-semibold mb-4 flex-shrink-0">Tasks Completed</h2>
+						<h2 class="chart-title chart-title-completed text-lg font-semibold mb-4 flex-shrink-0">
+              <span class="chart-title-icon"></span> Tasks Completed
+            </h2>
 						<div class="chart-canvas-wrapper h-60 md:h-72 w-full relative flex-grow">
                             <canvas bind:this={tasksCompletedChartCanvas}></canvas>
                         </div>
@@ -335,7 +408,9 @@
 					</div>
 
 					<div class="chart-card p-4 md:p-6 rounded-xl shadow-lg flex flex-col">
-						<h2 class="chart-title chart-title-timeliness text-lg font-semibold mb-4 flex-shrink-0">Completion Timeliness</h2>
+						<h2 class="chart-title chart-title-timeliness text-lg font-semibold mb-4 flex-shrink-0">
+              <span class="chart-title-icon"></span> Completion Timeliness
+            </h2>
 						<div class="chart-canvas-wrapper h-60 md:h-72 w-full relative flex-grow">
                             <canvas bind:this={timelinessChartCanvas}></canvas>
                         </div>
@@ -346,7 +421,9 @@
 					</div>
 
 					<div class="chart-card p-4 md:p-6 rounded-xl shadow-lg flex flex-col">
-                        <h2 class="chart-title chart-title-priorities text-lg font-semibold mb-4 flex-shrink-0">Task Priorities</h2>
+                        <h2 class="chart-title chart-title-priorities text-lg font-semibold mb-4 flex-shrink-0">
+              <span class="chart-title-icon"></span> Task Priorities
+            </h2>
 						<div class="chart-canvas-wrapper h-60 md:h-72 w-full relative flex-grow">
                             <canvas bind:this={prioritiesChartCanvas}></canvas>
                         </div>
@@ -382,6 +459,17 @@
 		</main>
 	</div>
 </div>
+
+<!-- AI Assistant Panel -->
+<CalendarAIPanel
+    {isDarkMode}
+    tasks={dashboardStats?.tasks || []}
+    bind:isOpen={isAIPanelOpen}
+    on:selectTask={(e) => {
+      // Navigate to tasks page with task ID to auto-open it
+      goto(`/tasks?taskId=${e.detail.taskId}`);
+    }}
+/>
 
 <style>
 	/* --- Base Styles & Font --- */
@@ -446,9 +534,78 @@
       .main-content { padding-top: calc(60px + 1.5rem); }
     }
     .dashboard-title { color: #1f2937; }
+    .greeting-text { color: #6b7280; }
     .error-alert { background-color: #fee2e2; border-color: #f87171; color: #b91c1c; }
-    .chart-card { background-color: #ffffff; /* shadow-lg, rounded-xl applied with Tailwind */ }
-    .chart-title { /* Common styles */ }
+
+    /* --- Hero Stat Cards --- */
+    .stat-card {
+        background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+        border: 1px solid rgba(0,0,0,0.05);
+        position: relative;
+        overflow: hidden;
+    }
+    .stat-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        right: 0;
+        width: 80px;
+        height: 80px;
+        background: radial-gradient(circle, rgba(59,130,246,0.1) 0%, transparent 70%);
+        border-radius: 50%;
+        transform: translate(30%, -30%);
+    }
+    .stat-icon-wrapper {
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 12px;
+    }
+    .productivity-icon { background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); color: white; }
+    .streak-icon { background: linear-gradient(135deg, #f97316 0%, #ea580c 100%); color: white; }
+    .today-icon { background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%); color: white; }
+    .alert-icon { background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); color: white; }
+    
+    .stat-value { color: #1f2937; }
+    .stat-label { color: #6b7280; }
+    
+    .stat-progress {
+        height: 6px;
+        background: #e5e7eb;
+        border-radius: 3px;
+        overflow: hidden;
+    }
+    .progress-bar {
+        height: 100%;
+        background: linear-gradient(90deg, #3b82f6 0%, #1d4ed8 100%);
+        border-radius: 3px;
+        transition: width 0.5s ease;
+    }
+    .overdue-badge {
+        display: inline-block;
+        padding: 2px 8px;
+        background: #fef2f2;
+        color: #dc2626;
+        border-radius: 12px;
+        font-size: 0.7rem;
+        font-weight: 600;
+    }
+
+    /* --- Mini Stat Cards --- */
+    .mini-stat-card {
+        background: rgba(255,255,255,0.7);
+        border: 1px solid rgba(0,0,0,0.05);
+    }
+    .mini-stat-value { color: #1f2937; }
+    .mini-stat-label { color: #6b7280; }
+
+    /* --- Chart Cards --- */
+    .chart-card { background-color: #ffffff; }
+    .chart-title { display: flex; align-items: center; gap: 8px; }
+    .chart-title-icon { font-size: 1.2em; }
     .chart-title-completed { color: #2563eb; }
     .chart-title-timeliness { color: #16a34a; }
     .chart-title-priorities { color: #7c3aed; }
@@ -515,7 +672,32 @@
         background-color: #18181b; 
     }
     :global(body.dark) .dashboard-title { color: #f3f4f6; }
+    :global(body.dark) .greeting-text { color: #9ca3af; }
     :global(body.dark) .error-alert { background-color: rgba(159, 18, 57, 0.3); border-color: #dc2626; color: #fda4af; }
+    
+    /* Dark mode stat cards */
+    :global(body.dark) .stat-card {
+        background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
+        border-color: rgba(255,255,255,0.05);
+    }
+    :global(body.dark) .stat-card::before {
+        background: radial-gradient(circle, rgba(59,130,246,0.15) 0%, transparent 70%);
+    }
+    :global(body.dark) .stat-value { color: #f3f4f6; }
+    :global(body.dark) .stat-label { color: #9ca3af; }
+    :global(body.dark) .stat-progress { background: #374151; }
+    :global(body.dark) .overdue-badge {
+        background: rgba(220, 38, 38, 0.2);
+        color: #f87171;
+    }
+    
+    :global(body.dark) .mini-stat-card {
+        background: rgba(31,41,55,0.7);
+        border-color: rgba(255,255,255,0.05);
+    }
+    :global(body.dark) .mini-stat-value { color: #f3f4f6; }
+    :global(body.dark) .mini-stat-label { color: #9ca3af; }
+    
     :global(body.dark) .chart-card { background-color: #1f2937; }
     :global(body.dark) .chart-title-completed { color: #60a5fa; }
     :global(body.dark) .chart-title-timeliness { color: #4ade80; }

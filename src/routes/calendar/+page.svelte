@@ -12,6 +12,7 @@
   import DayTasksModal from '$lib/components/DayTasksModal.svelte'; // Import new modal component
   import TaskDetailModal from '$lib/components/TaskDetailModal.svelte'; // Import task detail modal
   import AppHeader from '$lib/components/AppHeader.svelte';
+  import CalendarAIPanel from '$lib/components/CalendarAIPanel.svelte';
 
   export let data: {
     user?: { name?: string };
@@ -35,7 +36,7 @@
   let currentYear = new Date().getFullYear();
   let currentMonth = new Date().getMonth();
 
-  interface CalendarEvent { id: string; title: string; description?: string; color?: string; deadlineTime?: string; }
+  interface CalendarEvent { id: string; title: string; description?: string; color?: string; deadlineTime?: string; priority?: string | number | null; }
   interface Day { dayNum: number; events: CalendarEvent[]; isCurrentMonth: boolean; isToday: boolean; date: Date; }
   let daysInMonth: Day[] = [];
   let isLoadingCalendar = true;
@@ -53,6 +54,7 @@
   let popoverX: number = 0; // X coordinate for popover
   let popoverY: number = 0; // Y coordinate for popover
   let hoverTimeout: ReturnType<typeof setTimeout> | null = null; // For delayed close on hover
+  let hoverOpenTimeout: ReturnType<typeof setTimeout> | null = null; // For delayed open on hover
 
   let showDayTasksModal = false;
   let selectedDayTasks: TaskForFrontend[] = [];
@@ -61,6 +63,9 @@
   // Task Detail Modal state
   let isTaskDetailModalOpen = false;
   let selectedTaskForModal: TaskForFrontend | null = null;
+
+  // AI Panel state
+  let isAIPanelOpen = false;
 
   const dropdownIds = ['notifWindow', 'helpWindow', 'profileWindow'];
 
@@ -107,7 +112,7 @@
                 if (task.dueDateISO) {
                     const [taskYear, taskMonth, taskDay] = task.dueDateISO.split('-').map(Number);
                     if (taskYear === currentDateObj.getFullYear() && (taskMonth - 1) === currentDateObj.getMonth() && taskDay === currentDateObj.getDate()) {
-                        eventsForThisDay.push({ id: task.id, title: task.title, description: task.description, deadlineTime: task.dueTime || undefined, color: task.color || '#10B981', });
+                        eventsForThisDay.push({ id: task.id, title: task.title, description: task.description, deadlineTime: task.dueTime || undefined, color: task.color || '#10B981', priority: task.priority || 'standard' });
                     }
                 }
             });
@@ -150,33 +155,48 @@
   function closeSidebar() { isSidebarOpen = false; }
   
   // Modified to accept eventId and optionally MouseEvent for positioning
+  // Now with delayed opening to prevent accidental popups
   function openTaskDetailsPopover(eventId: string, event?: MouseEvent) {
       // Clear any pending close timeout
       if (hoverTimeout) {
           clearTimeout(hoverTimeout);
           hoverTimeout = null;
       }
+      // Clear any pending open timeout
+      if (hoverOpenTimeout) {
+          clearTimeout(hoverOpenTimeout);
+          hoverOpenTimeout = null;
+      }
+      
       const task = data.tasks.find(t => t.id === eventId);
       if (task) {
-          selectedTaskForDetails = task;
-          if (event) {
-              popoverX = event.clientX;
-              popoverY = event.clientY;
-          } else {
-              // Fallback for keyboard events or if event is not provided
-              // You might want to calculate position based on the element's bounding rect
-              popoverX = window.innerWidth / 2; // Center of the screen as a fallback
-              popoverY = window.innerHeight / 2; // Center of the screen as a fallback
-          }
-          showTaskDetailsPopover = true;
+          // Store position immediately (before timeout)
+          const posX = event?.clientX ?? window.innerWidth / 2;
+          const posY = event?.clientY ?? window.innerHeight / 2;
+          
+          // Delay opening by 500ms
+          hoverOpenTimeout = setTimeout(() => {
+              selectedTaskForDetails = task;
+              popoverX = posX;
+              popoverY = posY;
+              showTaskDetailsPopover = true;
+          }, 500);
       } else {
           console.warn(`Task with ID ${eventId} not found for details popover.`);
       }
   }
-  function closeTaskDetailsPopover() { showTaskDetailsPopover = false; selectedTaskForDetails = null; } // Changed from Modal to Popover
+  function closeTaskDetailsPopover() { 
+      showTaskDetailsPopover = false; 
+      selectedTaskForDetails = null; 
+  }
   
   // Delayed close for hover - allows moving mouse to popover
   function scheduleClosePopover() {
+      // Cancel any pending open
+      if (hoverOpenTimeout) {
+          clearTimeout(hoverOpenTimeout);
+          hoverOpenTimeout = null;
+      }
       if (hoverTimeout) clearTimeout(hoverTimeout);
       hoverTimeout = setTimeout(() => {
           closeTaskDetailsPopover();
@@ -453,13 +473,6 @@
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" class={`w-5 h-5 ${currentPath === '/workspace' ? 'stroke-white' : (isDarkMode ? 'stroke-zinc-300' : 'stroke-gray-700')}`}><path stroke-linecap="round" stroke-linejoin="round" d="M20.25 14.15v4.098a2.25 2.25 0 0 1-2.25 2.25h-12a2.25 2.25 0 0 1-2.25-2.25V14.15M18 18.75h.75A2.25 2.25 0 0 0 21 16.5v-1.5a2.25 2.25 0 0 0-2.25-2.25h-15A2.25 2.25 0 0 0 1.5 15v1.5A2.25 2.25 0 0 0 3.75 18.75H4.5M12 12.75a3 3 0 0 0-3-3H5.25V7.5a3 3 0 0 1 3-3h7.5a3 3 0 0 1 3 3v2.25H15a3 3 0 0 0-3 3Z" /></svg>
             <span>Workspace</span>
           </a>
-          <a href="/ai-chat"
-             class={`flex items-center gap-3 px-3 py-2 rounded-md font-semibold transition-colors duration-150
-                    ${currentPath === '/ai-chat' ? (isDarkMode ? 'bg-blue-700 text-white' : 'bg-blue-600 text-white') : (isDarkMode ? 'text-zinc-300 hover:bg-zinc-700' : 'text-gray-700 hover:bg-gray-100')}`}
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5" aria-hidden="true"><path d="M12.001 2.504a2.34 2.34 0 00-2.335 2.335v.583c0 .582.212 1.13.582 1.556l.03.035-.03.034a2.34 2.34 0 00-2.917 3.916A3.287 3.287 0 004.08 14.25a3.287 3.287 0 003.287 3.287h8.266a3.287 3.287 0 003.287-3.287 3.287 3.287 0 00-1.253-2.583 2.34 2.34 0 00-2.917-3.916l-.03-.034.03-.035c.37-.425.582-.973.582-1.555v-.583a2.34 2.34 0 00-2.335-2.336h-.002zM9.75 12.75a.75.75 0 000 1.5h4.5a.75.75 0 000-1.5h-4.5z" /><path fill-rule="evenodd" d="M12 1.5c5.79 0 10.5 4.71 10.5 10.5S17.79 22.5 12 22.5 1.5 17.79 1.5 12 6.21 1.5 12 1.5zM2.85 12a9.15 9.15 0 019.15-9.15 9.15 9.15 0 019.15 9.15 9.15 9.15 0 01-9.15 9.15A9.15 9.15 0 012.85 12z" clip-rule="evenodd" /></svg>
-            <span>Ask Synthia</span>
-          </a>
         </nav>
       </div>
       <button on:click={handleLogout}
@@ -501,7 +514,33 @@
                 {:else if daysInMonth.length > 0}
                     {#each daysInMonth as day (day.date.toISOString() + '-' + day.dayNum + '-' + day.events.map(e=>e.id + (e.deadlineTime || '')).join('-'))} <div class={`p-0.5 sm:p-1 border flex flex-col transition-colors duration-150 cursor-pointer relative group overflow-hidden ${!day.isCurrentMonth ? (isDarkMode ? 'bg-zinc-850 border-zinc-750 text-zinc-600' : 'bg-gray-50 border-gray-100 text-gray-400') : (isDarkMode ? 'bg-zinc-750 border-zinc-700 hover:bg-zinc-700' : 'bg-white border-gray-200 hover:bg-gray-50')} ${day.isToday && day.isCurrentMonth ? (isDarkMode ? '!border-blue-500 ring-1 ring-blue-500 !bg-zinc-700' : '!border-blue-500 ring-1 ring-blue-500 !bg-blue-50') : ''}`} role="gridcell" aria-label={`Date ${day.date.toLocaleDateString()}${day.events.length ? ', ' + day.events.length + ' event' + (day.events.length > 1 ? 's' : '') : ''}`} on:click={() => openDayTasksModal(day)} tabindex="0" on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') openDayTasksModal(day); }}>
                             <span class={`text-[0.65rem] sm:text-xs md:text-sm font-semibold flex-shrink-0 ${day.isToday && day.isCurrentMonth ? (isDarkMode ? 'text-blue-300' : 'text-blue-600') : ''} ${!day.isCurrentMonth ? 'opacity-60' : ''}`}>{day.dayNum}</span>
-                            {#if day.isCurrentMonth && day.events.length > 0} {@const maxEventsToShow = day.events.length > 2 ? 1 : 2} <ul class="mt-0.5 text-[0.5rem] sm:text-[0.6rem] md:text-[0.7rem] space-y-0.5 overflow-hidden flex-1 min-h-0"> {#each day.events.slice(0, maxEventsToShow) as event (event.id)} <li class={`truncate px-0.5 py-px sm:px-1 sm:py-0.5 rounded text-white leading-tight cursor-pointer hover:opacity-80 transition-opacity`} style="background-color: {event.color || (isDarkMode ? '#374151' : '#9CA3AF')};" on:mouseenter={(e) => openTaskDetailsPopover(event.id, e)} on:mouseleave={scheduleClosePopover} on:keydown|stopPropagation={(e) => { if (e.key === 'Enter' || e.key === ' ') openTaskDetailsPopover(event.id); }} tabindex="0" role="button" aria-label={`View details for ${event.title}`} title={event.title + (event.deadlineTime ? ` (DL: ${event.deadlineTime})` : '')}> {event.title} {#if event.deadlineTime}<span class="hidden sm:block text-[0.5rem] sm:text-[0.55rem] opacity-80">DL: {event.deadlineTime}</span>{/if} </li> {/each} {#if day.events.length > maxEventsToShow}<li class={`italic text-[0.5rem] sm:text-[0.55rem] ${isDarkMode ? 'text-zinc-400' : 'text-gray-500'}`}>+{day.events.length - maxEventsToShow} more</li>{/if} </ul> {/if}
+                            {#if day.isCurrentMonth && day.events.length > 0} {@const maxEventsToShow = day.events.length > 2 ? 1 : 2} <ul class="mt-0.5 text-[0.5rem] sm:text-[0.6rem] md:text-[0.7rem] space-y-0.5 overflow-hidden flex-1 min-h-0"> {#each day.events.slice(0, maxEventsToShow) as event (event.id)} <li class={`truncate px-0.5 py-px sm:px-1 sm:py-0.5 rounded text-white leading-tight cursor-pointer hover:opacity-80 transition-opacity`} style="background-color: {event.color || (isDarkMode ? '#374151' : '#9CA3AF')};" on:mouseenter={(e) => openTaskDetailsPopover(event.id, e)} on:mouseleave={scheduleClosePopover} on:keydown|stopPropagation={(e) => { if (e.key === 'Enter' || e.key === ' ') openTaskDetailsPopover(event.id); }} tabindex="0" role="button" aria-label={`View details for ${event.title}`}> {event.title} {#if event.deadlineTime}<span class="hidden sm:block text-[0.5rem] sm:text-[0.55rem] opacity-80">DL: {event.deadlineTime}</span>{/if} </li> {/each} {#if day.events.length > maxEventsToShow}
+                                {@const hiddenEvents = day.events.slice(maxEventsToShow)}
+                                {@const hiddenCount = hiddenEvents.length}
+                                <li 
+                                  class={`mt-1 p-1 rounded-md cursor-pointer transition-all hover:scale-[1.02] ${isDarkMode ? 'bg-zinc-700/80 hover:bg-zinc-600' : 'bg-gray-100 hover:bg-gray-200'}`}
+                                  on:click|stopPropagation={() => openDayTasksModal(day)}
+                                  role="button"
+                                  tabindex="0"
+                                  title={`${hiddenCount} more task${hiddenCount > 1 ? 's' : ''} - Click to view all`}
+                                >
+                                  <div class="flex items-center justify-between gap-1">
+                                    <div class="flex items-center gap-0.5">
+                                      {#each hiddenEvents.slice(0, 5) as hEvent}
+                                        {@const priority = hEvent.priority || 'standard'}
+                                        {@const dotColor = priority === 'urgent' ? 'bg-gradient-to-r from-red-400 to-red-600' : priority === 'high' ? 'bg-gradient-to-r from-orange-400 to-orange-600' : priority === 'standard' ? 'bg-gradient-to-r from-blue-400 to-blue-600' : 'bg-gradient-to-r from-gray-400 to-gray-500'}
+                                        <span class={`w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full ${dotColor} shadow-sm ring-1 ring-white/30`}></span>
+                                      {/each}
+                                      {#if hiddenCount > 5}
+                                        <span class={`text-[0.5rem] ${isDarkMode ? 'text-zinc-400' : 'text-gray-500'}`}>...</span>
+                                      {/if}
+                                    </div>
+                                    <span class={`text-[0.55rem] sm:text-[0.65rem] font-bold px-1.5 py-0.5 rounded-full ${isDarkMode ? 'bg-purple-600 text-white' : 'bg-purple-500 text-white'}`}>
+                                      +{hiddenCount}
+                                    </span>
+                                  </div>
+                                </li>
+                              {/if} </ul> {/if}
                              <button on:click|stopPropagation={() => openAddEventForm(day.date)} class={`absolute bottom-0.5 right-0.5 sm:bottom-1 sm:right-1 p-0.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-150 focus:opacity-100 ${isDarkMode ? 'bg-blue-600 hover:bg-blue-500 text-white' : 'bg-blue-500 hover:bg-blue-600 text-white'}`} aria-label="Add event to this day"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-2 h-2 sm:w-2.5 sm:h-2.5 md:w-3 md:h-3"><path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" /></svg></button>
                         </div>
                     {/each}
@@ -580,6 +619,39 @@
         } finally {
             isTaskDetailModalOpen = false;
         }
+    }}
+  />
+
+  <!-- Calendar AI Panel -->
+  <CalendarAIPanel
+    {isDarkMode}
+    tasks={data.tasks || []}
+    bind:isOpen={isAIPanelOpen}
+    on:createTask={async (e) => {
+      const task = e.detail;
+      const formData = new FormData();
+      formData.append('title', task.title);
+      formData.append('description', task.description || '');
+      formData.append('eventDate', task.dueDate);
+      if (task.dueTime) formData.append('dueTime', task.dueTime);
+      formData.append('priority', task.priority || 'standard');
+      formData.append('color', '#3B82F6');
+      
+      try {
+        const response = await fetch('?/addEvent', {
+          method: 'POST',
+          body: formData
+        });
+        if (response.ok) {
+          await invalidateAll();
+        }
+      } catch (error) {
+        console.error('Error creating task from AI:', error);
+      }
+    }}
+    on:selectTask={(e) => {
+      // Navigate to tasks page with task ID to open the task there
+      goto(`/tasks?taskId=${e.detail.taskId}`);
     }}
   />
 </div>

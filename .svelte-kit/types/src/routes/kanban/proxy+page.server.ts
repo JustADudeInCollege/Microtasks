@@ -137,7 +137,7 @@ export const load = async ({ locals, url }: PageServerLoadEvent) => {
 
     const filterFromDate = url.searchParams.get('filterFromDate');
     const filterToDate = url.searchParams.get('filterToDate');
-    
+
     try {
         // Example: assuming workspaces are user-specific or you want to fetch them
         const workspacesQuery = adminDb.collection('workspaces').where('ownerId', '==', userId);
@@ -247,32 +247,32 @@ export const actions = {
         if (!title) {
             return fail(400, { taskForm: { error: 'Task title is required.', title, description, dueDate, dueTime, priority, tags: tagsString, boardId } });
         }
-        
+
         // Use the specific type for creation
         const taskData: TaskDataForCreate = {
             userId, boardId, title, description, priority, tags, isCompleted: false,
             createdAt: FieldValue.serverTimestamp(),
             lastModified: FieldValue.serverTimestamp(),
             // These will be explicitly set below
-            dueDate: null, 
+            dueDate: null,
             dueTime: null,
         };
-        
+
         if (dueDate === '' || dueDate === null) {
             taskData.dueDate = null;
             taskData.dueTime = null;
         } else if (dueDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
             taskData.dueDate = dueDate;
         } else {
-            return fail(400, { taskForm: { error: 'Invalid due date format. Use YYYY-MM-DD.', title, description, dueDate, dueTime, priority, tags: tagsString, boardId }});
+            return fail(400, { taskForm: { error: 'Invalid due date format. Use YYYY-MM-DD.', title, description, dueDate, dueTime, priority, tags: tagsString, boardId } });
         }
-        
+
         if (dueTime === '' || dueTime === null || !taskData.dueDate) {
             taskData.dueTime = null;
         } else if (dueTime.match(/^\d{2}:\d{2}$/)) {
             taskData.dueTime = dueTime;
         } else {
-            return fail(400, { taskForm: { error: 'Invalid due time format. Use HH:MM.', title, description, dueDate, dueTime, priority, tags: tagsString, boardId }});
+            return fail(400, { taskForm: { error: 'Invalid due time format. Use HH:MM.', title, description, dueDate, dueTime, priority, tags: tagsString, boardId } });
         }
 
         try {
@@ -300,9 +300,9 @@ export const actions = {
         const isCompletedString = formData.get('isCompleted')?.toString(); // New: Get isCompleted from form data
 
         if (!title && title !== undefined) { // Check if title is explicitly empty, not just missing
-             return fail(400, { taskForm: { error: 'Task title is required.', taskId } });
+            return fail(400, { taskForm: { error: 'Task title is required.', taskId } });
         }
-        
+
         // Type for update payload, ensuring lastModified is FieldValue
         // Other fields are optional and match FetchedTaskData structure.
         type TaskUpdatePayload = Partial<Omit<FetchedTaskData, 'lastModified' | 'completedAt'>> & {
@@ -310,8 +310,8 @@ export const actions = {
             completedAt?: FieldValue | null; // Allow completedAt to be updated
         };
 
-        const taskUpdateData: TaskUpdatePayload = { 
-            lastModified: FieldValue.serverTimestamp() 
+        const taskUpdateData: TaskUpdatePayload = {
+            lastModified: FieldValue.serverTimestamp()
         };
 
         if (title !== undefined) taskUpdateData.title = title;
@@ -344,13 +344,13 @@ export const actions = {
         if (taskUpdateData.dueDate === null) {
             taskUpdateData.dueTime = null;
         }
-        
+
         try {
             const taskRef = tasksCollection.doc(taskId); // taskRef is DocumentReference<FetchedTaskData>
             const taskDoc = await taskRef.get();
             if (!taskDoc.exists) return fail(404, { taskForm: { error: 'Task not found.' } });
             if (taskDoc.data()?.userId !== userId) return fail(403, { taskForm: { error: 'Permission denied.' } });
-            
+
             // New: Handle isCompleted and completedAt
             if (isCompletedString !== undefined) {
                 const newIsCompleted = isCompletedString === 'true';
@@ -365,15 +365,15 @@ export const actions = {
             const updatedTaskData = updatedTaskDoc.data();
 
             // Return updated isCompleted, dueDateISO, and dueTime for client-side reconciliation
-            return { 
-                taskForm: { 
-                    success: true, 
+            return {
+                taskForm: {
+                    success: true,
                     message: 'Task updated successfully!',
                     taskId: taskId,
                     isCompleted: updatedTaskData?.isCompleted, // Use actual updated value
                     dueDateISO: updatedTaskData?.dueDate,      // Use actual updated value
                     dueTime: updatedTaskData?.dueTime           // Use actual updated value
-                } 
+                }
             };
         } catch (error: any) {
             console.error(`[Action updateTask /kanban] ERROR for task ${taskId}:`, error);

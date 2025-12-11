@@ -4,7 +4,7 @@
   import { goto, invalidateAll } from '$app/navigation';
   import { auth, db } from '$lib/firebase.js';
   import { onAuthStateChanged } from 'firebase/auth';
-  import { doc, getDoc } from 'firebase/firestore';
+  import { doc, getDoc, collection, query, where, orderBy, onSnapshot, limit } from 'firebase/firestore';
   import type { InvitationForFrontend, UserNotificationForFrontend } from '$lib/types/collaboration';
   import { getRoleDisplayName } from '$lib/types/collaboration';
 
@@ -17,7 +17,6 @@
   let showLogoutConfirm = false;
   let profilePicture: string = '';
   let showNotifDropdown = false;
-  let showHelpDropdown = false;
   let showProfileDropdown = false;
 
   // Pending invitations state
@@ -57,25 +56,33 @@
   function toggleNotifDropdown(e: MouseEvent) {
     e.stopPropagation();
     showNotifDropdown = !showNotifDropdown;
-    showHelpDropdown = false;
     showProfileDropdown = false;
-    
-    // Load invitations and notifications when opening dropdown
-    if (showNotifDropdown) {
-      loadPendingInvitations();
-      loadUserNotifications();
-    }
+    // Real-time listeners (onSnapshot) handle updates - no need to manually fetch
   }
 
   function playNotificationSound() {
     if (browser) {
       try {
-        notificationAudio = new Audio('/mambou.mp3');
-        notificationAudio.volume = 0.5;
-        notificationAudio.play().catch(err => {
-          // Autoplay might be blocked by browser
-          console.log('Could not autoplay notification sound:', err);
-        });
+        // Use Web Audio API for volume above 100%
+        const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+        
+        fetch('/mambou.mp3')
+          .then(response => response.arrayBuffer())
+          .then(arrayBuffer => audioContext.decodeAudioData(arrayBuffer))
+          .then(audioBuffer => {
+            const source = audioContext.createBufferSource();
+            const gainNode = audioContext.createGain();
+            
+            source.buffer = audioBuffer;
+            gainNode.gain.value = 2.0; // 200% volume
+            
+            source.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            source.start(0);
+          })
+          .catch(err => {
+            console.log('Could not play notification sound:', err);
+          });
       } catch (err) {
         console.error('Failed to play notification sound:', err);
       }
@@ -210,12 +217,7 @@
     }
   }
 
-  function toggleHelpDropdown(e: MouseEvent) {
-    e.stopPropagation();
-    showHelpDropdown = !showHelpDropdown;
-    showNotifDropdown = false;
-    showProfileDropdown = false;
-  }
+
 
   function toggleProfileDropdown(e: MouseEvent) {
     e.stopPropagation();
@@ -226,7 +228,6 @@
 
   function closeAllDropdowns() {
     showNotifDropdown = false;
-    showHelpDropdown = false;
     showProfileDropdown = false;
   }
 
@@ -255,63 +256,165 @@
     }
   }
 
-  let invitationPollInterval: ReturnType<typeof setInterval> | null = null;
-  let notificationPollInterval: ReturnType<typeof setInterval> | null = null;
+  // Real-time listener unsubscribe functions (NO POLLING - pure real-time)
+  let unsubscribeInvitations: (() => void) | null = null;
+  let unsubscribeNotifications: (() => void) | null = null;
+  let currentUserEmail: string | null = null;
+  let currentUserId: string | null = null;
+  let isInitialNotificationLoad = true; // Track if this is the first notification load
+  let isInitialInvitationLoad = true; // Track if this is the first invitation load
 
   onMount(() => {
     if (browser) {
       updateDateTime();
       dateTimeInterval = setInterval(updateDateTime, 60000);
 
-      // Load pending invitations and notifications for notification badge (with sound on initial load)
-      loadPendingInvitations(true);
-      loadUserNotifications(true);
-
-      // Poll for new invitations every 3 seconds
-      invitationPollInterval = setInterval(() => {
-        loadPendingInvitations(false);
-      }, 3000);
-
-      // Poll for new notifications every 5 seconds
-      notificationPollInterval = setInterval(() => {
-        loadUserNotifications(false);
-      }, 5000);
-
-      // Fetch profile picture from Firestore or Firebase Auth (Google)
-      const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      // Set up real-time listeners when user is authenticated
+      // Pure onSnapshot - NO POLLING
+      const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
         if (user) {
+          currentUserId = user.uid;
+          
+          // Get user email and profile picture
           try {
             const credRef = doc(db, "credentials", user.uid);
             const credSnap = await getDoc(credRef);
-            if (credSnap.exists() && credSnap.data().photoBase64) {
-              profilePicture = credSnap.data().photoBase64;
+            if (credSnap.exists()) {
+              currentUserEmail = credSnap.data().email;
+              if (credSnap.data().photoBase64) {
+                profilePicture = credSnap.data().photoBase64;
+              } else if (user.photoURL) {
+                // Fallback to Google profile picture
+                profilePicture = user.photoURL;
+              }
+              
+              // Real-time listener for invitations
+              if (currentUserEmail) {
+                const invitationsQuery = query(
+                  collection(db, 'workspace_invitations'),
+                  where('invitedEmail', '==', currentUserEmail),
+                  where('status', '==', 'pending')
+                );
+                
+                unsubscribeInvitations = onSnapshot(invitationsQuery, (snapshot) => {
+                  const newInvitations = snapshot.docs.map(doc => ({
+                    id: doc.id,
+                    ...doc.data()
+                  })) as InvitationForFrontend[];
+                  
+                  // Play sound if new invitations appeared (not on initial load)
+                  if (!isInitialInvitationLoad && newInvitations.length > pendingInvitations.length) {
+                    console.log('[Invitations] New invitation! Playing sound.');
+                    playNotificationSound();
+                  }
+                  
+                  isInitialInvitationLoad = false;
+                  pendingInvitations = newInvitations;
+                  isLoadingInvitations = false;
+                }, (error) => {
+                  console.error('Error listening to invitations:', error);
+                  isLoadingInvitations = false;
+                });
+              }
+              
+              // Real-time listener for notifications
+              console.log('[Notifications] Setting up listener for userId:', user.uid);
+              const notificationsQuery = query(
+                collection(db, 'user_notifications'),
+                where('userId', '==', user.uid),
+                limit(50)
+              );
+              
+              unsubscribeNotifications = onSnapshot(notificationsQuery, (snapshot) => {
+                const newNotifications = snapshot.docs.map(doc => {
+                  const data = doc.data();
+                  return {
+                    id: doc.id,
+                    userId: data.userId,
+                    type: data.type,
+                    title: data.title,
+                    message: data.message,
+                    workspaceId: data.workspaceId,
+                    workspaceName: data.workspaceName,
+                    taskId: data.taskId,
+                    taskTitle: data.taskTitle,
+                    fromUserId: data.fromUserId,
+                    fromUsername: data.fromUsername,
+                    isRead: data.isRead,
+                    createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+                  };
+                }) as UserNotificationForFrontend[];
+                
+                // Sort by createdAt (most recent first)
+                newNotifications.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+                
+                // Play sound if new unread notifications appeared (but not on initial load)
+                const unreadCount = newNotifications.filter(n => !n.isRead).length;
+                const prevUnreadCount = userNotifications.filter(n => !n.isRead).length;
+                
+                console.log('[Notifications] onSnapshot fired:', {
+                  isInitialLoad: isInitialNotificationLoad,
+                  newCount: newNotifications.length,
+                  prevCount: userNotifications.length,
+                  unreadCount,
+                  prevUnreadCount,
+                  shouldPlaySound: !isInitialNotificationLoad && unreadCount > prevUnreadCount
+                });
+                
+                if (!isInitialNotificationLoad && unreadCount > prevUnreadCount) {
+                  console.log('[Notifications] Playing sound!');
+                  playNotificationSound();
+                }
+                
+                // After first load, new notifications should trigger sound
+                isInitialNotificationLoad = false;
+                
+                userNotifications = newNotifications;
+                isLoadingNotifications = false;
+              }, (error) => {
+                console.error('Error listening to notifications:', error);
+                isLoadingNotifications = false;
+              });
+              
             } else if (user.photoURL) {
-              // Fallback to Google profile picture from Firebase Auth
               profilePicture = user.photoURL;
             }
           } catch (error) {
-            console.error("Error fetching profile picture:", error);
-            // Still try to use Google photo if Firestore fails
+            console.error("Error fetching user data:", error);
             if (user.photoURL) {
               profilePicture = user.photoURL;
             }
           }
+        } else {
+          // User logged out - clean up listeners
+          if (unsubscribeInvitations) {
+            unsubscribeInvitations();
+            unsubscribeInvitations = null;
+          }
+          if (unsubscribeNotifications) {
+            unsubscribeNotifications();
+            unsubscribeNotifications = null;
+          }
+          currentUserEmail = null;
+          currentUserId = null;
+          pendingInvitations = [];
+          userNotifications = [];
         }
       });
 
       return () => {
         if (dateTimeInterval) clearInterval(dateTimeInterval);
-        if (invitationPollInterval) clearInterval(invitationPollInterval);
-        if (notificationPollInterval) clearInterval(notificationPollInterval);
-        unsubscribe();
+        if (unsubscribeInvitations) unsubscribeInvitations();
+        if (unsubscribeNotifications) unsubscribeNotifications();
+        unsubscribeAuth();
       };
     }
   });
 
   onDestroy(() => {
     if (dateTimeInterval) clearInterval(dateTimeInterval);
-    if (invitationPollInterval) clearInterval(invitationPollInterval);
-    if (notificationPollInterval) clearInterval(notificationPollInterval);
+    if (unsubscribeInvitations) unsubscribeInvitations();
+    if (unsubscribeNotifications) unsubscribeNotifications();
   });
 </script>
 
@@ -442,24 +545,6 @@
             {/each}
           </div>
         {/if}
-      </div>
-      {/if}
-    </div>
-
-    <div class="relative">
-      <button on:click={toggleHelpDropdown} aria-label="Help & FAQ" class="dropdown-trigger">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5" aria-hidden="true">
-          <path fill-rule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12zm8.706-1.442c1.146-.573 2.437.463 2.126 1.706l-.709 2.836.042-.02a.75.75 0 01.67 1.34l-.042.022c-1.147.573-2.438-.463-2.127-1.706l.71-2.836-.042.02a.75.75 0 11-.671-1.34l.041-.022zM12 9a.75.75 0 100-1.5.75.75 0 000 1.5z" clip-rule="evenodd" />
-        </svg>
-      </button>
-      {#if showHelpDropdown}
-      <div class={`dropdown-window ${isDarkMode ? 'bg-zinc-700 border-zinc-600 text-zinc-300' : 'bg-white border-gray-200 text-gray-700'}`}>
-        <h3 class="font-semibold mb-2 text-sm">FAQ</h3>
-        <ul class="list-disc list-inside space-y-1 text-xs">
-          <li>How do I add a task?</li>
-          <li>Where is the calendar?</li>
-        </ul>
-        <a href="/support" class="text-xs text-blue-600 hover:underline mt-2 block">Visit Support</a>
       </div>
       {/if}
     </div>

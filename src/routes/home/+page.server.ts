@@ -90,8 +90,8 @@ export const load: PageServerLoad = async ({ locals, url }) => {
             // This will likely require an index on (userId ASC, dueDate ASC, isCompleted ASC, createdAt DESC) or similar
             tasksQuery = tasksQuery.where('isCompleted', '==', false);
         } else {
-             console.log('[Server Load /home] Fetching all tasks for today (completed and incomplete).');
-             // This will likely require an index on (userId ASC, dueDate ASC, createdAt DESC)
+            console.log('[Server Load /home] Fetching all tasks for today (completed and incomplete).');
+            // This will likely require an index on (userId ASC, dueDate ASC, createdAt DESC)
         }
 
         // Apply ordering and limit
@@ -113,10 +113,10 @@ export const load: PageServerLoad = async ({ locals, url }) => {
             let dueDateStr: string | null = null;
             if (docData.dueDate) {
                 if (docData.dueDate instanceof Timestamp) {
-                     // Convert Timestamp to 'YYYY-MM-DD'
-                     try {
+                    // Convert Timestamp to 'YYYY-MM-DD'
+                    try {
                         dueDateStr = docData.dueDate.toDate().toISOString().split('T')[0];
-                     } catch (e) { console.warn(`Error converting dueDate Timestamp for task ${docSnapshot.id}`); }
+                    } catch (e) { console.warn(`Error converting dueDate Timestamp for task ${docSnapshot.id}`); }
                 } else if (typeof docData.dueDate === 'string') {
                     // Validate or use the string directly if it's already YYYY-MM-DD
                     dueDateStr = docData.dueDate.match(/^\d{4}-\d{2}-\d{2}$/) ? docData.dueDate : null;
@@ -172,7 +172,7 @@ export const actions: Actions = {
         try {
             const newDocRef = await adminDb.collection('notes').add({ userId, title, content, createdAt: FieldValue.serverTimestamp(), lastModified: FieldValue.serverTimestamp() });
             return { noteForm: { success: true, id: newDocRef.id, message: 'Note added.' } };
-        } catch (e:any) { console.error('[Action addNote] Error:', e); return fail(500, { noteForm: { title, content, error: 'Server error adding note.' } }); }
+        } catch (e: any) { console.error('[Action addNote] Error:', e); return fail(500, { noteForm: { title, content, error: 'Server error adding note.' } }); }
     },
 
     editNote: async ({ request, locals }) => {
@@ -187,10 +187,10 @@ export const actions: Actions = {
         try {
             const noteDocRef = adminDb.collection('notes').doc(id);
             const noteSnap = await noteDocRef.get();
-            if (!noteSnap.exists || noteSnap.data()?.userId !== userId) return fail(noteSnap.exists ? 403 : 404, { noteForm: { id, error: 'Permission denied or note not found.' }});
+            if (!noteSnap.exists || noteSnap.data()?.userId !== userId) return fail(noteSnap.exists ? 403 : 404, { noteForm: { id, error: 'Permission denied or note not found.' } });
             await noteDocRef.update({ title, content, lastModified: FieldValue.serverTimestamp() });
             return { noteForm: { success: true, id, message: 'Note updated.' } };
-        } catch (e:any) { console.error('[Action editNote] Error:', e); return fail(500, { noteForm: { id, title, content, error: 'Server error updating note.' } }); }
+        } catch (e: any) { console.error('[Action editNote] Error:', e); return fail(500, { noteForm: { id, title, content, error: 'Server error updating note.' } }); }
     },
 
     deleteNote: async ({ request, locals }) => {
@@ -204,17 +204,17 @@ export const actions: Actions = {
             const noteSnap = await noteDocRef.get();
             // Allow deletion even if note not found (idempotent) or permission denied (don't leak info)
             if (noteSnap.exists && noteSnap.data()?.userId === userId) {
-                 await noteDocRef.delete();
-                 console.log(`[Action deleteNote] Note ${id} deleted by user ${userId}`);
-                 return { noteForm: { success: true, id, message: 'Note deleted.' } };
+                await noteDocRef.delete();
+                console.log(`[Action deleteNote] Note ${id} deleted by user ${userId}`);
+                return { noteForm: { success: true, id, message: 'Note deleted.' } };
             } else if (!noteSnap.exists) {
-                 console.log(`[Action deleteNote] Note ${id} not found for deletion.`);
-                 return { noteForm: { success: true, id, message: 'Note already deleted or not found.' } };
+                console.log(`[Action deleteNote] Note ${id} not found for deletion.`);
+                return { noteForm: { success: true, id, message: 'Note already deleted or not found.' } };
             } else {
-                 console.warn(`[Action deleteNote] User ${userId} attempted to delete note ${id} owned by ${noteSnap.data()?.userId}`);
-                 return fail(403, { noteForm: { id, error: 'Permission denied.' }});
+                console.warn(`[Action deleteNote] User ${userId} attempted to delete note ${id} owned by ${noteSnap.data()?.userId}`);
+                return fail(403, { noteForm: { id, error: 'Permission denied.' } });
             }
-        } catch (e:any) { console.error('[Action deleteNote] Error:', e); return fail(500, { noteForm: { id, error: 'Server error deleting note.' } }); }
+        } catch (e: any) { console.error('[Action deleteNote] Error:', e); return fail(500, { noteForm: { id, error: 'Server error deleting note.' } }); }
     },
 
     // --- Task Actions (Modified) ---
@@ -235,7 +235,7 @@ export const actions: Actions = {
 
         // Require at least a title (description is now optional if title exists)
         if (!title) {
-             return fail(400, { taskForm: { description, dueDate, dueTime, priority, tags: tagsString, error: 'Task title is required.' } });
+            return fail(400, { taskForm: { description, dueDate, dueTime, priority, tags: tagsString, error: 'Task title is required.' } });
         }
 
         // Prepare the data object to be saved to Firestore
@@ -283,11 +283,11 @@ export const actions: Actions = {
         try {
             const taskDocRef = adminDb.collection('tasks').doc(id);
             const taskSnap = await taskDocRef.get();
-            if (!taskSnap.exists || taskSnap.data()?.userId !== userId) return fail(taskSnap.exists ? 403: 404, { id, error: 'Permission denied or task not found.' });
+            if (!taskSnap.exists || taskSnap.data()?.userId !== userId) return fail(taskSnap.exists ? 403 : 404, { id, error: 'Permission denied or task not found.' });
             await taskDocRef.update({ isCompleted: newIsCompleted, lastModified: FieldValue.serverTimestamp() });
             console.log(`[Action toggleTask] Task ${id} completion set to ${newIsCompleted}`);
             return { success: true }; // Client will invalidate data
-        } catch (e:any) { console.error(`[Action toggleTask] Error for task ${id}:`, e); return fail(500, { id, error: 'Server error updating task status.' }); }
+        } catch (e: any) { console.error(`[Action toggleTask] Error for task ${id}:`, e); return fail(500, { id, error: 'Server error updating task status.' }); }
     },
 
     deleteTask: async ({ request, locals }) => {
@@ -299,17 +299,73 @@ export const actions: Actions = {
         try {
             const taskDocRef = adminDb.collection('tasks').doc(id);
             const taskSnap = await taskDocRef.get();
-             if (taskSnap.exists && taskSnap.data()?.userId === userId) {
-                 await taskDocRef.delete();
-                 console.log(`[Action deleteTask] Task ${id} deleted by user ${userId}`);
-                 return { success: true, message: 'Task deleted.' };
+            if (taskSnap.exists && taskSnap.data()?.userId === userId) {
+                await taskDocRef.delete();
+                console.log(`[Action deleteTask] Task ${id} deleted by user ${userId}`);
+                return { success: true, message: 'Task deleted.' };
             } else if (!taskSnap.exists) {
-                 console.log(`[Action deleteTask] Task ${id} not found for deletion.`);
-                 return { success: true, message: 'Task already deleted or not found.' }; // Not an error
+                console.log(`[Action deleteTask] Task ${id} not found for deletion.`);
+                return { success: true, message: 'Task already deleted or not found.' }; // Not an error
             } else {
-                 console.warn(`[Action deleteTask] User ${userId} attempted to delete task ${id} owned by ${taskSnap.data()?.userId}`);
-                 return fail(403, { id, error: 'Permission denied.' });
+                console.warn(`[Action deleteTask] User ${userId} attempted to delete task ${id} owned by ${taskSnap.data()?.userId}`);
+                return fail(403, { id, error: 'Permission denied.' });
             }
-        } catch (e:any) { console.error(`[Action deleteTask] Error for task ${id}:`, e); return fail(500, { id, error: 'Server error deleting task.' }); }
+        } catch (e: any) { console.error(`[Action deleteTask] Error for task ${id}:`, e); return fail(500, { id, error: 'Server error deleting task.' }); }
+    },
+
+    updateTask: async ({ request, locals }) => {
+        const userId = locals.userId;
+        if (!userId) return fail(401, { error: 'Authentication required.' });
+
+        const formData = await request.formData();
+        const id = formData.get('id')?.toString();
+        const title = formData.get('title')?.toString()?.trim();
+        const description = formData.get('description')?.toString()?.trim() || '';
+        const priority = formData.get('priority')?.toString() || 'standard';
+        const dueDate = formData.get('dueDate')?.toString() || null;
+        const dueTime = formData.get('dueTime')?.toString() || null;
+
+        if (!id) return fail(400, { error: 'Task ID missing.' });
+        if (!title) return fail(400, { error: 'Task title is required.' });
+
+        try {
+            const taskDocRef = adminDb.collection('tasks').doc(id);
+            const taskSnap = await taskDocRef.get();
+
+            if (!taskSnap.exists) {
+                return fail(404, { error: 'Task not found.' });
+            }
+            if (taskSnap.data()?.userId !== userId) {
+                return fail(403, { error: 'Permission denied.' });
+            }
+
+            const updateData: any = {
+                title,
+                description,
+                priority,
+                lastModified: FieldValue.serverTimestamp()
+            };
+
+            // Handle dueDate
+            if (dueDate && dueDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                updateData.dueDate = dueDate;
+            } else if (dueDate === '') {
+                updateData.dueDate = null;
+            }
+
+            // Handle dueTime
+            if (dueTime && dueTime.match(/^\d{2}:\d{2}$/)) {
+                updateData.dueTime = dueTime;
+            } else if (dueTime === '') {
+                updateData.dueTime = null;
+            }
+
+            await taskDocRef.update(updateData);
+            console.log(`[Action updateTask] Task ${id} updated by user ${userId}`);
+            return { success: true, message: 'Task updated.' };
+        } catch (e: any) {
+            console.error(`[Action updateTask] Error for task ${id}:`, e);
+            return fail(500, { error: 'Server error updating task.' });
+        }
     },
 };

@@ -4,15 +4,17 @@
 		"src/routes/+layout.ts",
 		"src/routes/+layout.ts"
 	],
-	"/ai-chat": [
-		"src/routes/ai-chat/+page.server.ts",
-		"src/routes/+layout.ts"
+	"/api/ai-task": [
+		"src/routes/api/ai-task/+server.ts"
 	],
 	"/api/auth/session": [
 		"src/routes/api/auth/session/+server.ts"
 	],
 	"/api/auth/timezone": [
 		"src/routes/api/auth/timezone/+server.ts"
+	],
+	"/api/calendar-ai": [
+		"src/routes/api/calendar-ai/+server.ts"
 	],
 	"/api/chats": [
 		"src/routes/api/chats/+server.ts"
@@ -28,6 +30,9 @@
 	],
 	"/api/pase-task-nlp": [
 		"src/routes/api/pase-task-nlp/+server.ts"
+	],
+	"/api/tasks": [
+		"src/routes/api/tasks/+server.ts"
 	],
 	"/api/v1/chat": [
 		"src/routes/api/v1/chat/+server.ts"
@@ -81,9 +86,6 @@
 	],
 	"/signup": [
 		"src/routes/signup/+page.server.js",
-		"src/routes/+layout.ts"
-	],
-	"/support": [
 		"src/routes/+layout.ts"
 	],
 	"/tasks": [

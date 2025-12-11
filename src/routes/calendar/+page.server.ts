@@ -93,7 +93,7 @@ function mapTaskDataForCalendar(docSnapshot: FirebaseFirestore.QueryDocumentSnap
 
     const createdAtISO = createdAtTimestamp?.toDate()?.toISOString() ?? null;
     const completedAtDate = completedAtTimestamp?.toDate() ?? null;
-    
+
     const preciseDueDateDeadlineUTC = getPreciseDueDateInTimezoneAsUTC(
         storedDueDateString ?? null,
         storedDueTimeString ?? null, // Pass deadline time
@@ -108,7 +108,7 @@ function mapTaskDataForCalendar(docSnapshot: FirebaseFirestore.QueryDocumentSnap
             console.warn(`[Calendar Page Server] Error processing dueDateISO for task ${taskId}: ${storedDueDateString}`, e);
         }
     }
-    
+
     let status: TaskForFrontend['status'];
     const isCompleted = docData.isCompleted ?? false;
     const now = new Date();
@@ -171,7 +171,7 @@ export const load: PageServerLoad = async ({ locals }: PageServerLoadEvent) => {
     try {
         const tasksCollectionRef = adminDb.collection('tasks');
         const firestoreQuery = tasksCollectionRef.where('userId', '==', userId);
-        
+
         const snapshot = await firestoreQuery.get();
         const tasks: TaskForFrontend[] = snapshot.docs
             .map(mapTaskDataForCalendar)
@@ -205,15 +205,16 @@ export const actions: Actions = {
         const eventDate = formData.get('eventDate')?.toString() || null; // This is the dueDate (YYYY-MM-DD)
         const deadlineTime = formData.get('dueTime')?.toString() || null; // This is the dueTime (HH:MM) from the form
         const color = formData.get('color')?.toString() || '#3B82F6';
+        const priority = formData.get('priority')?.toString() || 'standard'; // Read priority from form
 
         if (!title) {
             return fail(400, {
-                eventForm: { error: 'Event title is required.', title, description, eventDate, dueTime: deadlineTime, color }
+                eventForm: { error: 'Event title is required.', title, description, eventDate, dueTime: deadlineTime, color, priority }
             });
         }
         if (!eventDate) {
-             return fail(400, {
-                eventForm: { error: 'Event date is required.', title, description, eventDate, dueTime: deadlineTime, color }
+            return fail(400, {
+                eventForm: { error: 'Event date is required.', title, description, eventDate, dueTime: deadlineTime, color, priority }
             });
         }
 
@@ -224,7 +225,7 @@ export const actions: Actions = {
             isCompleted: false,
             createdAt: FieldValue.serverTimestamp() as AdminTimestamp,
             lastModified: FieldValue.serverTimestamp() as AdminTimestamp,
-            priority: 'standard',
+            priority: priority, // Use the priority from form
             dueDate: null, // Initialize
             dueTime: null, // Initialize (this will be the deadline time)
             color: color,
@@ -234,7 +235,7 @@ export const actions: Actions = {
             taskData.dueDate = eventDate;
         } else {
             return fail(400, {
-                eventForm: { error: 'Invalid date format. Use YYYY-MM-DD.', title, description, eventDate, dueTime: deadlineTime, color }
+                eventForm: { error: 'Invalid date format. Use YYYY-MM-DD.', title, description, eventDate, dueTime: deadlineTime, color, priority }
             });
         }
 
@@ -245,27 +246,23 @@ export const actions: Actions = {
             taskData.dueTime = deadlineTime;
         } else if (deadlineTime) { // if not empty/null and not matching format
             return fail(400, {
-                eventForm: { error: 'Invalid deadline time format. Use HH:MM.', title, description, eventDate, dueTime: deadlineTime, color }
+                eventForm: { error: 'Invalid deadline time format. Use HH:MM.', title, description, eventDate, dueTime: deadlineTime, color, priority }
             });
         }
-        
+
         try {
             const newTaskDocRef = await adminDb.collection('tasks').add(taskData);
-            return { 
-                type: 'success',
-                status: 200,
-                data: {
-                    eventForm: {
-                        success: true,
-                        id: newTaskDocRef.id,
-                        message: 'Event added successfully as a task!'
-                    }
+            return {
+                eventForm: {
+                    success: true,
+                    id: newTaskDocRef.id,
+                    message: 'Event added successfully as a task!'
                 }
             };
         } catch (error: any) {
             console.error('[Calendar Action addEvent] ERROR:', error);
             return fail(500, {
-                eventForm: { error: `Failed to add event: ${error.message || 'Server error'}`, title, description, eventDate, dueTime: deadlineTime, color }
+                eventForm: { error: `Failed to add event: ${error.message || 'Server error'}`, title, description, eventDate, dueTime: deadlineTime, color, priority }
             });
         }
     },
@@ -285,11 +282,11 @@ export const actions: Actions = {
         const isCompletedString = formData.get('isCompleted')?.toString();
 
         if (!title && title !== undefined) {
-             return fail(400, { taskForm: { error: 'Task title is required.', taskId } });
+            return fail(400, { taskForm: { error: 'Task title is required.', taskId } });
         }
-        
-        const taskUpdateData: Record<string, any> = { 
-            lastModified: FieldValue.serverTimestamp() 
+
+        const taskUpdateData: Record<string, any> = {
+            lastModified: FieldValue.serverTimestamp()
         };
 
         if (title !== undefined) taskUpdateData.title = title;
@@ -321,13 +318,13 @@ export const actions: Actions = {
         if (taskUpdateData.dueDate === null) {
             taskUpdateData.dueTime = null;
         }
-        
+
         try {
             const taskRef = adminDb.collection('tasks').doc(taskId);
             const taskDoc = await taskRef.get();
             if (!taskDoc.exists) return fail(404, { taskForm: { error: 'Task not found.' } });
             if (taskDoc.data()?.userId !== userId) return fail(403, { taskForm: { error: 'Permission denied.' } });
-            
+
             if (isCompletedString !== undefined) {
                 const newIsCompleted = isCompletedString === 'true';
                 taskUpdateData.isCompleted = newIsCompleted;
@@ -339,15 +336,15 @@ export const actions: Actions = {
             const updatedTaskDoc = await taskRef.get();
             const updatedTaskData = updatedTaskDoc.data();
 
-            return { 
-                taskForm: { 
-                    success: true, 
+            return {
+                taskForm: {
+                    success: true,
                     message: 'Task updated successfully!',
                     taskId: taskId,
                     isCompleted: updatedTaskData?.isCompleted,
                     dueDateISO: updatedTaskData?.dueDate,
                     dueTime: updatedTaskData?.dueTime
-                } 
+                }
             };
         } catch (error: any) {
             console.error(`[Action updateTask /calendar] ERROR for task ${taskId}:`, error);

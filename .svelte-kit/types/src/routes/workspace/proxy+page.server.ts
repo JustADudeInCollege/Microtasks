@@ -8,7 +8,7 @@ import { getUserAccessibleWorkspaces, getUserRole, getWorkspaceMembers } from '$
 import type { MemberRole } from '$lib/types/collaboration.js';
 
 export interface BoardForFrontend {
-    id:string;
+    id: string;
     title: string;
     createdAtISO?: string | null;
     userRole?: MemberRole | null;
@@ -47,27 +47,27 @@ export const load = async ({ locals }: PageServerLoadEvent) => {
             pageLoadError = 'Could not load your user data.';
         }
 
-        if (!pageLoadError) { 
+        if (!pageLoadError) {
             try {
                 // Get all workspaces user has access to (owned + shared)
                 const accessibleWorkspaceIds = await getUserAccessibleWorkspaces(userId);
-                
+
                 // Fetch workspace details for all accessible workspaces
                 const boardsPromises = accessibleWorkspaceIds.map(async (wsId) => {
                     const wsDoc = await adminDb.collection('workspaces').doc(wsId).get();
                     if (!wsDoc.exists) return null;
-                    
+
                     const data = wsDoc.data()!;
                     const userRole = await getUserRole(wsId, userId);
                     const members = await getWorkspaceMembers(wsId);
-                    
+
                     let createdAtISO = null;
                     if (data.createdAt && data.createdAt instanceof Timestamp) {
                         createdAtISO = data.createdAt.toDate().toISOString();
                     } else if (data.createdAt && typeof data.createdAt === 'object' && (data.createdAt as any)._seconds) {
                         createdAtISO = new Date((data.createdAt as any)._seconds * 1000).toISOString();
                     }
-                    
+
                     return {
                         id: wsDoc.id,
                         title: data.title || 'Untitled Workspace',
@@ -77,10 +77,10 @@ export const load = async ({ locals }: PageServerLoadEvent) => {
                         isCollaborative: members.length > 1,
                     };
                 });
-                
+
                 const boardsResults = await Promise.all(boardsPromises);
                 boardsForFrontend = boardsResults.filter((b): b is BoardForFrontend => b !== null);
-                
+
                 // Sort by creation date (most recent first)
                 boardsForFrontend.sort((a, b) => {
                     const dateA = a.createdAtISO ? new Date(a.createdAtISO).getTime() : 0;
@@ -111,31 +111,31 @@ export const actions = {
         const formData = await request.formData();
         const title = formData.get('title')?.toString()?.trim();
         if (!title) {
-            return fail(400, { boardForm: { error: 'Workspace title is required.', title }});
+            return fail(400, { boardForm: { error: 'Workspace title is required.', title } });
         }
         if (title.length > 100) {
-             return fail(400, { boardForm: { error: 'Workspace title is too long (max 100 chars).', title }});
+            return fail(400, { boardForm: { error: 'Workspace title is too long (max 100 chars).', title } });
         }
         try {
             const newBoardRef = await adminDb.collection('workspaces').add({ userId, title, createdAt: FieldValue.serverTimestamp() });
-            return { boardForm: { success: true, message: 'Workspace added!', newBoard: { id: newBoardRef.id, title }}};
+            return { boardForm: { success: true, message: 'Workspace added!', newBoard: { id: newBoardRef.id, title } } };
         } catch (error: any) {
-            return fail(500, { boardForm: { error: `Failed to add: ${(error as Error).message || 'Server error.'}`, title }});
+            return fail(500, { boardForm: { error: `Failed to add: ${(error as Error).message || 'Server error.'}`, title } });
         }
     },
 
     deleteBoard: async ({ request, locals }: import('./$types').RequestEvent) => {
         const userId = locals.userId;
-        if (!userId) return fail(401, { deleteBoardForm: { error: 'User not authenticated.' }});
+        if (!userId) return fail(401, { deleteBoardForm: { error: 'User not authenticated.' } });
         const formData = await request.formData();
         const boardId = formData.get('boardId')?.toString();
-        if (!boardId) return fail(400, { deleteBoardForm: { error: 'Workspace ID required.' }});
+        if (!boardId) return fail(400, { deleteBoardForm: { error: 'Workspace ID required.' } });
 
         try {
             const boardRef = adminDb.collection('workspaces').doc(boardId);
             const boardDoc = await boardRef.get();
             if (!boardDoc.exists || boardDoc.data()?.userId !== userId) {
-                return fail(boardDoc.exists ? 403 : 404, { deleteBoardForm: { error: boardDoc.exists ? 'Permission denied.' : 'Not found.' }});
+                return fail(boardDoc.exists ? 403 : 404, { deleteBoardForm: { error: boardDoc.exists ? 'Permission denied.' : 'Not found.' } });
             }
             const batch = adminDb.batch();
             const tasksQuery = adminDb.collection('tasks').where('boardId', '==', boardId).where('userId', '==', userId);
@@ -144,9 +144,9 @@ export const actions = {
             tasksSnapshot.docs.forEach(doc => { batch.delete(doc.ref); deletedTasksCount++; });
             batch.delete(boardRef);
             await batch.commit();
-            return { deleteBoardForm: { success: true, message: `Deleted workspace & ${deletedTasksCount} task(s).` }};
+            return { deleteBoardForm: { success: true, message: `Deleted workspace & ${deletedTasksCount} task(s).` } };
         } catch (error: any) {
-            return fail(500, { deleteBoardForm: { error: `Failed to delete: ${(error as Error).message || 'Server error.'}` }});
+            return fail(500, { deleteBoardForm: { error: `Failed to delete: ${(error as Error).message || 'Server error.'}` } });
         }
     },
 
@@ -158,14 +158,15 @@ export const actions = {
 
         const formData = await request.formData();
         const workspaceName = formData.get('workspaceName')?.toString()?.trim();
-        const templateTitle = formData.get('templateTitle')?.toString() || "Selected Template"; 
+        const templateTitle = formData.get('templateTitle')?.toString() || "Selected Template";
         const templateGoal = formData.get('templateGoal')?.toString() || "Achieve project objectives.";
         const templateStepsJSON = formData.get('templateStepsJSON')?.toString();
         const stepSpecificInputsJSON = formData.get('stepSpecificInputsJSON')?.toString();
-        
+
         const projectStartDateString = formData.get('projectStartDate')?.toString();
         const projectEndDateString = formData.get('projectEndDate')?.toString();
         const projectNotes = formData.get('projectNotes')?.toString()?.trim() || '';
+        const pdfContext = formData.get('pdfContext')?.toString()?.trim() || '';
 
         if (!workspaceName) return fail(400, { templateForm: { error: 'New workspace name is required.' } });
         if (!templateStepsJSON || !stepSpecificInputsJSON) return fail(400, { templateForm: { error: 'Template data missing.' } });
@@ -193,7 +194,7 @@ export const actions = {
         if (startDateObj && endDateObj && endDateObj < startDateObj) {
             return fail(400, { templateForm: { error: 'End date cannot be before start date.' } });
         }
-        
+
         const newWorkspaceData = {
             userId, title: workspaceName, createdAt: FieldValue.serverTimestamp(),
             fromTemplate: templateTitle, templateGoal: templateGoal,
@@ -202,7 +203,7 @@ export const actions = {
         try {
             const newWorkspaceRef = await adminDb.collection('workspaces').add(newWorkspaceData);
             const newWorkspaceId = newWorkspaceRef.id;
-            
+
             const originalStepsWithUserInputForAI = definedTemplateSteps.map((step, index) => ({
                 text: step.text,
                 userInput: userStepInputs[index]?.trim() || undefined
@@ -213,9 +214,10 @@ export const actions = {
                 templateTitle,
                 templateGoal,
                 originalStepsWithUserInputForAI,
-                projectNotes
+                projectNotes,
+                pdfContext
             );
-            
+
             let tasksGeneratedCount = aiGeneratedTasks.length;
 
             if (tasksGeneratedCount > 0) {
@@ -228,11 +230,11 @@ export const actions = {
 
                 if (startDateObj && endDateObj && totalTasksToSchedule > 1) {
                     const totalDurationDays = Math.max(1, (endDateObj.getTime() - startDateObj.getTime()) / (1000 * 60 * 60 * 24));
-                    daysBetweenTasks = totalTasksToSchedule > 1 ? Math.max(1, Math.floor(totalDurationDays / (totalTasksToSchedule -1))) : 0;
+                    daysBetweenTasks = totalTasksToSchedule > 1 ? Math.max(1, Math.floor(totalDurationDays / (totalTasksToSchedule - 1))) : 0;
                 } else if (startDateObj) {
                     daysBetweenTasks = (totalTasksToSchedule > 1) ? 2 : 0;
                 }
-                
+
                 aiGeneratedTasks.forEach((taskDetails, index) => {
                     let dueDateString: string | null = null;
                     if (taskDueDateForCalc) {
@@ -240,15 +242,15 @@ export const actions = {
                         if (index > 0 && daysBetweenTasks > 0) {
                             individualTaskDueDate.setUTCDate(taskDueDateForCalc.getUTCDate() + (index * daysBetweenTasks));
                         } else if (index > 0 && daysBetweenTasks === 0 && startDateObj) {
-                             individualTaskDueDate = new Date(startDateObj.getTime());
+                            individualTaskDueDate = new Date(startDateObj.getTime());
                         }
 
                         if (endDateObj && individualTaskDueDate > endDateObj) {
-                           individualTaskDueDate = new Date(endDateObj.getTime());
+                            individualTaskDueDate = new Date(endDateObj.getTime());
                         }
                         dueDateString = individualTaskDueDate.toISOString().split('T')[0];
                     }
-                    
+
                     const finalTaskData = {
                         userId,
                         boardId: newWorkspaceId,
@@ -259,7 +261,7 @@ export const actions = {
                         priority: 'standard',
                         dueDate: dueDateString,
                         dueTime: null,
-                        tags: templateTitle ? [templateTitle.toLowerCase().replace(/\s+/g, '-').substring(0,30)] : [],
+                        tags: templateTitle ? [templateTitle.toLowerCase().replace(/\s+/g, '-').substring(0, 30)] : [],
                     };
                     batch.set(tasksCollection.doc(), finalTaskData);
                 });
@@ -276,22 +278,22 @@ export const actions = {
 
         } catch (error: any) {
             console.error('[Action createWorkspaceFromTemplate] CRITICAL ERROR:', error);
-            const errorMessage = (error.message && error.message.toLowerCase().includes("ai")) 
-                ? `AI Processing Error: ${error.message}` 
+            const errorMessage = (error.message && error.message.toLowerCase().includes("ai"))
+                ? `AI Processing Error: ${error.message}`
                 : `Failed to create from template: ${(error as Error).message || 'Server error.'}`;
             return fail(500, {
                 templateForm: { error: errorMessage }
             });
         }
     },
-    
+
     logout: async ({ cookies }: import('./$types').RequestEvent) => {
-        cookies.set('userId', '', { 
-            path: '/', 
-            maxAge: 0, 
-            httpOnly: true, 
+        cookies.set('userId', '', {
+            path: '/',
+            maxAge: 0,
+            httpOnly: true,
             secure: process.env.NODE_ENV === 'production',
-            sameSite: 'lax' 
+            sameSite: 'lax'
         });
         throw redirect(303, '/login');
     }

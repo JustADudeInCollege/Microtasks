@@ -3,10 +3,10 @@
 
 import { adminDb, adminAuth } from './firebaseAdmin.js';
 import { FieldValue } from 'firebase-admin/firestore';
-import type { 
-    WorkspaceMember, 
-    WorkspaceInvitation, 
-    TaskAssignment, 
+import type {
+    WorkspaceMember,
+    WorkspaceInvitation,
+    TaskAssignment,
     ActivityLogEntry,
     MemberRole,
     ActivityAction,
@@ -29,19 +29,15 @@ const USER_NOTIFICATIONS = 'user_notifications';
  * Get a user's role in a workspace
  */
 export async function getUserRole(workspaceId: string, userId: string): Promise<MemberRole | null> {
-    console.log(`[getUserRole] workspaceId: ${workspaceId}, userId: ${userId}`);
-    
+
     // First check if user is the workspace owner
     const workspaceDoc = await adminDb.collection(WORKSPACES).doc(workspaceId).get();
     if (!workspaceDoc.exists) {
-        console.log(`[getUserRole] Workspace ${workspaceId} not found`);
         return null;
     }
     const workspaceData = workspaceDoc.data();
-    console.log(`[getUserRole] Workspace owner: ${workspaceData?.userId}, checking user: ${userId}`);
-    
+
     if (workspaceData?.userId === userId) {
-        console.log(`[getUserRole] User is owner`);
         return 'owner';
     }
 
@@ -51,14 +47,12 @@ export async function getUserRole(workspaceId: string, userId: string): Promise<
         .where('userId', '==', userId)
         .limit(1)
         .get();
-    
+
     if (memberQuery.empty) {
-        console.log(`[getUserRole] User is not a member`);
         return null;
     }
 
     const role = memberQuery.docs[0].data().role as MemberRole;
-    console.log(`[getUserRole] User role from membership: ${role}`);
     return role;
 }
 
@@ -74,8 +68,8 @@ export async function hasWorkspaceAccess(workspaceId: string, userId: string): P
  * Check if user can perform a specific action in a workspace
  */
 export async function canPerformAction(
-    workspaceId: string, 
-    userId: string, 
+    workspaceId: string,
+    userId: string,
     action: 'view' | 'edit' | 'delete' | 'manageMembers' | 'deleteWorkspace' | 'assign'
 ): Promise<boolean> {
     const role = await getUserRole(workspaceId, userId);
@@ -106,7 +100,7 @@ export async function getWorkspaceMembers(workspaceId: string): Promise<Workspac
         // Get owner info
         const ownerDoc = await adminDb.collection(CREDENTIALS).doc(workspaceData.userId).get();
         const ownerData = ownerDoc.data();
-        
+
         // Get owner's photo - first try credentials photoBase64, then Firebase Auth photoURL
         let ownerPhotoURL: string | undefined = ownerData?.photoBase64;
         if (!ownerPhotoURL) {
@@ -137,13 +131,13 @@ export async function getWorkspaceMembers(workspaceId: string): Promise<Workspac
 
         for (const doc of memberQuery.docs) {
             const data = doc.data();
-            
+
             // Get member's photo - first try credentials photoBase64, then Firebase Auth photoURL
             let memberPhotoURL: string | undefined;
             const memberCredDoc = await adminDb.collection(CREDENTIALS).doc(data.userId).get();
             const memberCredData = memberCredDoc.data();
             memberPhotoURL = memberCredData?.photoBase64;
-            
+
             if (!memberPhotoURL) {
                 try {
                     const memberAuthUser = await adminAuth.getUser(data.userId);
@@ -152,7 +146,7 @@ export async function getWorkspaceMembers(workspaceId: string): Promise<Workspac
                     // Ignore if user not found in Auth
                 }
             }
-            
+
             members.push({
                 id: doc.id,
                 workspaceId: data.workspaceId,
@@ -246,8 +240,8 @@ export async function removeWorkspaceMember(workspaceId: string, userId: string)
  * Update a member's role
  */
 export async function updateMemberRole(
-    workspaceId: string, 
-    userId: string, 
+    workspaceId: string,
+    userId: string,
     newRole: MemberRole
 ): Promise<void> {
     if (newRole === 'owner') {
@@ -287,7 +281,7 @@ export async function createInvitation(
     let invitedUserId: string | undefined;
     if (!existingUserQuery.empty) {
         invitedUserId = existingUserQuery.docs[0].id;
-        
+
         // Check if already a member
         const existingMember = await getUserRole(workspaceId, invitedUserId);
         if (existingMember) {
@@ -362,7 +356,7 @@ export async function getUserPendingInvitations(userId: string): Promise<Workspa
         for (const doc of invitationsQuery.docs) {
             const data = doc.data();
             const expiresAt = data.expiresAt?.toDate?.() || new Date(data.expiresAt);
-            
+
             // Mark expired invitations
             if (expiresAt < now) {
                 await doc.ref.update({ status: 'expired' });
@@ -399,7 +393,7 @@ export async function getUserPendingInvitations(userId: string): Promise<Workspa
  */
 export async function acceptInvitation(invitationId: string, userId: string): Promise<void> {
     const inviteDoc = await adminDb.collection(WORKSPACE_INVITATIONS).doc(invitationId).get();
-    
+
     if (!inviteDoc.exists) {
         throw new Error('Invitation not found');
     }
@@ -446,7 +440,7 @@ export async function acceptInvitation(invitationId: string, userId: string): Pr
  */
 export async function declineInvitation(invitationId: string, userId: string): Promise<void> {
     const inviteDoc = await adminDb.collection(WORKSPACE_INVITATIONS).doc(invitationId).get();
-    
+
     if (!inviteDoc.exists) {
         throw new Error('Invitation not found');
     }
@@ -522,11 +516,11 @@ export async function assignUserToTask(
     if (!taskDoc.exists) {
         throw new Error('Task not found');
     }
-    
+
     const taskData = taskDoc.data()!;
     const workspaceId = taskData.boardId;
     const taskTitle = taskData.title || 'Untitled Task';
-    
+
     const hasAccess = await hasWorkspaceAccess(workspaceId, userId);
     if (!hasAccess) {
         throw new Error('User is not a member of this workspace');
@@ -546,16 +540,16 @@ export async function assignUserToTask(
     // Get user info (the user being assigned)
     const userDoc = await adminDb.collection(CREDENTIALS).doc(userId).get();
     const userData = userDoc.data();
-    
+
     // Get assigner info (the user doing the assigning)
     const assignerDoc = await adminDb.collection(CREDENTIALS).doc(assignedByUserId).get();
     const assignerData = assignerDoc.data();
     const assignerUsername = assignerData?.username || 'Someone';
-    
+
     // Get workspace name
     const workspaceDoc = await adminDb.collection(WORKSPACES).doc(workspaceId).get();
     const workspaceName = workspaceDoc.data()?.title || 'Workspace';
-    
+
     // Get user's photo - first try credentials photoBase64, then Firebase Auth photoURL
     let photoURL: string | undefined = userData?.photoBase64;
     if (!photoURL) {
@@ -629,16 +623,16 @@ export async function getTaskAssignments(taskId: string): Promise<TaskAssignment
         .get();
 
     const assignments: TaskAssignment[] = [];
-    
+
     for (const doc of assignmentsQuery.docs) {
         const data = doc.data();
-        
+
         // Get user's photo - first try credentials photoBase64, then Firebase Auth, then stored
         let photoURL: string | undefined;
         const credDoc = await adminDb.collection(CREDENTIALS).doc(data.userId).get();
         const credData = credDoc.data();
         photoURL = credData?.photoBase64;
-        
+
         if (!photoURL) {
             try {
                 const authUser = await adminAuth.getUser(data.userId);
@@ -648,7 +642,7 @@ export async function getTaskAssignments(taskId: string): Promise<TaskAssignment
                 photoURL = data.photoURL;
             }
         }
-        
+
         assignments.push({
             id: doc.id,
             taskId: data.taskId,
@@ -659,7 +653,7 @@ export async function getTaskAssignments(taskId: string): Promise<TaskAssignment
             assignedBy: data.assignedBy,
         });
     }
-    
+
     // Sort in memory instead of Firestore to avoid index requirement
     return assignments.sort((a, b) => new Date(b.assignedAt).getTime() - new Date(a.assignedAt).getTime());
 }
@@ -673,34 +667,34 @@ export async function getWorkspaceTaskAssignments(workspaceId: string): Promise<
         const tasksQuery = await adminDb.collection('tasks')
             .where('boardId', '==', workspaceId)
             .get();
-        
+
         const taskIds = tasksQuery.docs.map(doc => doc.id);
-        
+
         if (taskIds.length === 0) {
             return [];
         }
-        
+
         // Get all assignments for these tasks
         // Firestore 'in' query has a limit of 30 items, so we need to batch
         const assignments: TaskAssignment[] = [];
         const batchSize = 30;
-        
+
         for (let i = 0; i < taskIds.length; i += batchSize) {
             const batch = taskIds.slice(i, i + batchSize);
             const assignmentsQuery = await adminDb.collection(TASK_ASSIGNMENTS)
                 .where('taskId', 'in', batch)
                 .get();
-            
+
             for (const doc of assignmentsQuery.docs) {
                 const data = doc.data();
-                
+
                 // Get user's photo from credentials
                 let photoURL: string | undefined;
                 try {
                     const credDoc = await adminDb.collection(CREDENTIALS).doc(data.userId).get();
                     const credData = credDoc.data();
                     photoURL = credData?.photoBase64;
-                    
+
                     if (!photoURL) {
                         try {
                             const authUser = await adminAuth.getUser(data.userId);
@@ -713,7 +707,7 @@ export async function getWorkspaceTaskAssignments(workspaceId: string): Promise<
                     console.error('[getWorkspaceTaskAssignments] Error fetching user photo:', e);
                     photoURL = undefined;
                 }
-                
+
                 assignments.push({
                     id: doc.id,
                     taskId: data.taskId,
@@ -725,7 +719,7 @@ export async function getWorkspaceTaskAssignments(workspaceId: string): Promise<
                 });
             }
         }
-        
+
         return assignments;
     } catch (err) {
         console.error('[getWorkspaceTaskAssignments] Error:', err);
@@ -745,7 +739,7 @@ export async function getUserAssignedTasks(userId: string, workspaceId?: string)
 
     for (const doc of assignmentsQuery.docs) {
         const taskId = doc.data().taskId;
-        
+
         if (workspaceId) {
             // Filter by workspace
             const taskDoc = await adminDb.collection('tasks').doc(taskId).get();
@@ -801,7 +795,7 @@ export async function logActivity(
  * Get activity log for a workspace
  */
 export async function getWorkspaceActivityLog(
-    workspaceId: string, 
+    workspaceId: string,
     limit: number = 50
 ): Promise<ActivityLogEntry[]> {
     try {
@@ -844,7 +838,7 @@ export async function getUserAccessibleWorkspaces(userId: string): Promise<strin
     const ownedQuery = await adminDb.collection(WORKSPACES)
         .where('userId', '==', userId)
         .get();
-    
+
     ownedQuery.docs.forEach(doc => {
         workspaceIds.push(doc.id);
     });
@@ -853,7 +847,7 @@ export async function getUserAccessibleWorkspaces(userId: string): Promise<strin
     const memberQuery = await adminDb.collection(WORKSPACE_MEMBERS)
         .where('userId', '==', userId)
         .get();
-    
+
     memberQuery.docs.forEach(doc => {
         const wsId = doc.data().workspaceId;
         if (!workspaceIds.includes(wsId)) {
@@ -884,7 +878,7 @@ export async function createNotification(
     }
 ): Promise<string> {
     console.log('[createNotification] Creating notification for user:', userId, 'type:', type, 'title:', title);
-    
+
     const notificationData = {
         userId,
         type,
@@ -910,8 +904,7 @@ export async function createNotification(
  */
 export async function getUserNotifications(userId: string, includeRead = false): Promise<UserNotification[]> {
     try {
-        console.log('[getUserNotifications] Fetching notifications for user:', userId, 'includeRead:', includeRead);
-        
+
         let query;
         if (!includeRead) {
             // Use simpler query without ordering to avoid index issues, then sort in memory
@@ -926,8 +919,7 @@ export async function getUserNotifications(userId: string, includeRead = false):
         }
 
         const snapshot = await query.get();
-        console.log('[getUserNotifications] Found', snapshot.docs.length, 'notifications');
-        
+
         const notifications = snapshot.docs.map(doc => {
             const data = doc.data();
             return {
@@ -946,10 +938,10 @@ export async function getUserNotifications(userId: string, includeRead = false):
                 createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
             };
         });
-        
+
         // Sort by createdAt in memory (most recent first)
         notifications.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-        
+
         return notifications;
     } catch (err) {
         console.error('[getUserNotifications] Error:', err);
@@ -964,11 +956,11 @@ export async function markNotificationAsRead(notificationId: string, userId: str
     try {
         const docRef = adminDb.collection(USER_NOTIFICATIONS).doc(notificationId);
         const doc = await docRef.get();
-        
+
         if (!doc.exists || doc.data()?.userId !== userId) {
             return false;
         }
-        
+
         await docRef.update({ isRead: true });
         return true;
     } catch (err) {
@@ -986,12 +978,12 @@ export async function markAllNotificationsAsRead(userId: string): Promise<number
             .where('userId', '==', userId)
             .where('isRead', '==', false)
             .get();
-        
+
         const batch = adminDb.batch();
         query.docs.forEach(doc => {
             batch.update(doc.ref, { isRead: true });
         });
-        
+
         await batch.commit();
         return query.size;
     } catch (err) {
@@ -1010,7 +1002,7 @@ export async function getUnreadNotificationCount(userId: string): Promise<number
             .where('isRead', '==', false)
             .count()
             .get();
-        
+
         return query.data().count;
     } catch (err) {
         console.error('[getUnreadNotificationCount] Error:', err);
@@ -1025,11 +1017,11 @@ export async function deleteNotification(notificationId: string, userId: string)
     try {
         const docRef = adminDb.collection(USER_NOTIFICATIONS).doc(notificationId);
         const doc = await docRef.get();
-        
+
         if (!doc.exists || doc.data()?.userId !== userId) {
             return false;
         }
-        
+
         await docRef.delete();
         return true;
     } catch (err) {

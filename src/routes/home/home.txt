@@ -40,7 +40,7 @@
   const encouragingMessages = [
     "No tasks today? Enjoy the calm before the next storm of productivity!",
     "Looks like a clear schedule! Time to recharge or tackle a passion project.",
-    "Zero tasks on the docket! Maybe it's a sign to get cynthia to assist you in learning something new today?",
+    "Zero tasks on the docket! Maybe it's a sign to get Synthia to assist you in learning something new today?",
     "Your to-do list is empty for today. Embrace the freedom!",
     "No tasks? Perfect day to plan your next big move or simply relax.",
     "Enjoy your task-free day! You've earned this peace.",
