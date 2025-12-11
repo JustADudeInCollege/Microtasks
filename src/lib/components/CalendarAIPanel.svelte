@@ -102,22 +102,75 @@
   let dailyPlanResult: any = null;
   let priorityResult: any = null;
   let breakdownResult: any = null;
+  let categoryResult: any = null;
   let isLoadingAction = false;
   let actionError: string | null = null;
   
   // Track the order of actions (most recent first)
-  let actionOrder: ('dailyPlan' | 'workload' | 'conflict' | 'priority' | 'breakdown')[] = [];
+  let actionOrder: ('dailyPlan' | 'workload' | 'conflict' | 'priority' | 'breakdown' | 'category')[] = [];
 
   // Task breakdown modal state
   let showBreakdownModal = false;
   let breakdownTaskTitle = '';
   let breakdownTaskDescription = '';
+  let breakdownTaskDueDate = ''; // Original task's due date to respect
   let isBreakingDown = false;
   let breakdownSubtasks: {title: string, description: string}[] = [];
   
   // Task picker modal state
   let showTaskPickerModal = false;
   let taskPickerSearch = '';
+
+  // Workspace creation prompt state
+  let showWorkspaceNamePrompt = false;
+  let workspaceName = '';
+  let isCreatingWorkspace = false;
+
+  // AI Tips for speech bubble
+  const aiTips = [
+    "👋 Click me to help with your tasks!",
+    "✨ I can plan your day for you!",
+    "📊 Let me analyze your workload!",
+    "🎯 I'll help prioritize your tasks!",
+    "⚡ Break down big tasks with AI!",
+    "🔍 Find schedule conflicts easily!",
+    "💡 Need help? I'm here for you!"
+  ];
+  let currentTipIndex = 0;
+  let showTipBubble = false;
+  let tipInterval: ReturnType<typeof setInterval> | null = null;
+
+  // Show tip bubble intermittently when panel is closed
+  $: if (!isOpen && browser) {
+    if (!tipInterval) {
+      // Show first tip after 2 seconds
+      setTimeout(() => {
+        if (!isOpen) {
+          showTipBubble = true;
+          // Hide after 4 seconds
+          setTimeout(() => { showTipBubble = false; }, 4000);
+        }
+      }, 2000);
+      
+      // Then show tips every 10 seconds
+      tipInterval = setInterval(() => {
+        if (!isOpen) {
+          currentTipIndex = (currentTipIndex + 1) % aiTips.length;
+          showTipBubble = true;
+          // Hide after 4 seconds
+          setTimeout(() => { showTipBubble = false; }, 4000);
+        }
+      }, 10000);
+    }
+  } else if (tipInterval) {
+    clearInterval(tipInterval);
+    tipInterval = null;
+    showTipBubble = false;
+  }
+
+  onDestroy(() => {
+    if (tipInterval) clearInterval(tipInterval);
+  });
 
   // Natural language task input
   let nlTaskInput = '';
@@ -481,10 +534,41 @@
     }
   }
 
+  async function analyzeCategories() {
+    isLoadingAction = true;
+    actionError = null;
+    categoryResult = null;
+
+    try {
+      const response = await fetch("/api/calendar-ai", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: 'suggest-categories',
+          payload: { tasks: normalizeTasksForAI(activeTasks) }
+        })
+      });
+
+      const data = await response.json();
+      if (data.success && data.data) {
+        categoryResult = data.data;
+        // Move this action to the front of the order
+        actionOrder = ['category', ...actionOrder.filter(a => a !== 'category')];
+      } else {
+        actionError = data.error || 'Failed to analyze categories';
+      }
+    } catch (error: any) {
+      actionError = error.message || 'An error occurred';
+    } finally {
+      isLoadingAction = false;
+    }
+  }
+
   function openBreakdownModal() {
     showBreakdownModal = true;
     breakdownTaskTitle = '';
     breakdownTaskDescription = '';
+    breakdownTaskDueDate = '';
     breakdownSubtasks = [];
     isBreakingDown = false;
   }
@@ -538,8 +622,94 @@
   }
 
   function createAllSubtasks() {
-    breakdownSubtasks.forEach(subtask => createSubtask(subtask));
-    closeBreakdownModal();
+    // Show workspace name prompt instead of creating tasks directly
+    workspaceName = breakdownTaskTitle; // Pre-fill with task title
+    showWorkspaceNamePrompt = true;
+  }
+
+  async function createWorkspaceWithSubtasks(useAutoName: boolean = false) {
+    const finalName = useAutoName ? breakdownTaskTitle : workspaceName.trim();
+    if (!finalName) return;
+
+    isCreatingWorkspace = true;
+    
+    try {
+      // Create the workspace
+      const wsResponse = await fetch('/api/workspace', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: finalName })
+      });
+      
+      const wsData = await wsResponse.json();
+      if (!wsData.success || !wsData.workspaceId) {
+        actionError = wsData.error || 'Failed to create workspace';
+        isCreatingWorkspace = false;
+        return;
+      }
+      
+      const workspaceId = wsData.workspaceId;
+      
+      // Calculate due dates - distribute evenly from today to the deadline
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      let deadlineDate: Date;
+      if (breakdownTaskDueDate) {
+        // Use the original task's deadline
+        deadlineDate = new Date(breakdownTaskDueDate);
+        deadlineDate.setHours(23, 59, 59, 999);
+        
+        // If deadline is in the past or today, spread subtasks over the next few days from today
+        if (deadlineDate <= today) {
+          // Deadline already passed, give each subtask 1 day starting from today
+          const numSubtasks = breakdownSubtasks.length;
+          deadlineDate = new Date(today.getTime() + Math.max(numSubtasks, 3) * 24 * 60 * 60 * 1000);
+        }
+      } else {
+        // Default: 7 days from now if no deadline set
+        deadlineDate = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
+      }
+      
+      const totalDays = Math.max(1, Math.floor((deadlineDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)));
+      const numSubtasks = breakdownSubtasks.length;
+      
+      // Create all subtasks in the new workspace
+      const taskPromises = breakdownSubtasks.map((subtask, index) => {
+        // Spread subtasks evenly, with last one due on or before deadline
+        const daysOffset = numSubtasks > 1 
+          ? Math.floor((index / (numSubtasks - 1)) * totalDays)
+          : 0;
+        const subtaskDueDate = new Date(today.getTime() + daysOffset * 24 * 60 * 60 * 1000);
+        
+        return fetch('/api/tasks', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: subtask.title,
+            description: subtask.description,
+            boardId: workspaceId,
+            priority: 'standard',
+            dueDate: subtaskDueDate.toISOString().split('T')[0]
+          })
+        });
+      });
+      
+      await Promise.all(taskPromises);
+      
+      // Close modals and redirect to new workspace
+      showWorkspaceNamePrompt = false;
+      closeBreakdownModal();
+      
+      // Redirect to the new workspace
+      if (browser) {
+        window.location.href = `/workspace/${workspaceId}`;
+      }
+    } catch (error: any) {
+      actionError = error.message || 'Failed to create workspace';
+    } finally {
+      isCreatingWorkspace = false;
+    }
   }
 
   async function parseNaturalLanguageTask() {
@@ -586,22 +756,40 @@
     conflictResult = null;
     dailyPlanResult = null;
     priorityResult = null;
+    categoryResult = null;
     actionError = null;
     parsedTask = null;
     actionOrder = [];
   }
 </script>
 
-<!-- Floating AI Button -->
+<!-- Floating AI Button with Speech Bubble -->
 {#if !isOpen}
-  <button
-    class="fixed bottom-10 right-16 z-50 w-16 h-16 rounded-full shadow-lg flex items-center justify-center transition-all duration-300 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 bg-purple-600 hover:bg-purple-700"
-    on:click={togglePanel}
-    aria-label="Open AI Assistant"
-    transition:scale={{ duration: 200, start: 0.8 }}
-  >
-    <img src="/Ai.png" alt="Ask Synthia AI" class="w-9 h-9" />
-  </button>
+  <div class="fixed bottom-10 right-16 z-50">
+    <!-- Speech Bubble (positioned above) -->
+    {#if showTipBubble}
+      <div 
+        class={`absolute bottom-full right-0 mb-3 px-3 py-2 rounded-xl text-sm font-medium shadow-lg whitespace-nowrap
+          ${isDarkMode ? 'bg-zinc-700 text-zinc-100' : 'bg-white text-gray-700 border border-gray-200'}`}
+        transition:scale={{ duration: 200, easing: quintOut }}
+      >
+        <span class="block">{aiTips[currentTipIndex]}</span>
+        <!-- Speech bubble arrow pointing down -->
+        <div 
+          class={`absolute top-full right-6 w-0 h-0 border-l-8 border-l-transparent border-r-8 border-r-transparent
+            ${isDarkMode ? 'border-t-8 border-t-zinc-700' : 'border-t-8 border-t-white'}`}
+        ></div>
+      </div>
+    {/if}
+    <!-- AI Button -->
+    <button
+      class="w-16 h-16 rounded-full shadow-lg flex items-center justify-center transition-all duration-300 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 bg-purple-600 hover:bg-purple-700"
+      on:click={togglePanel}
+      aria-label="Open AI Assistant"
+    >
+      <img src="/Ai.png" alt="Ask Synthia AI" class="w-9 h-9" />
+    </button>
+  </div>
 {/if}
 
 <!-- AI Panel -->
@@ -762,17 +950,18 @@
             </button>
 
             <button
-              class={`p-3 rounded-lg text-left opacity-60 cursor-not-allowed
-                ${isDarkMode ? 'bg-zinc-700 text-zinc-400' : 'bg-gray-50 text-gray-400'}`}
-              disabled
+              class={`p-3 rounded-lg text-left transition-all hover:scale-[1.02] active:scale-[0.98]
+                ${isDarkMode ? 'bg-zinc-700 hover:bg-zinc-650 text-zinc-200' : 'bg-gray-50 hover:bg-gray-100 text-gray-700'}`}
+              on:click={analyzeCategories}
+              disabled={isLoadingAction}
             >
               <div class="flex items-center gap-2 mb-1">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4">
-                  <path fill-rule="evenodd" d="M10 2a8 8 0 100 16 8 8 0 000-16zM8 5.25a.75.75 0 01.75-.75h2.5a.75.75 0 010 1.5h-2.5a.75.75 0 01-.75-.75zM5.25 8a.75.75 0 000 1.5h9.5a.75.75 0 000-1.5h-9.5zM5.25 11a.75.75 0 000 1.5h9.5a.75.75 0 000-1.5h-9.5zM5.25 14a.75.75 0 000 1.5h3.5a.75.75 0 000-1.5h-3.5z" clip-rule="evenodd" />
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4 text-teal-500">
+                  <path fill-rule="evenodd" d="M5.5 3A2.5 2.5 0 003 5.5v2.879a2.5 2.5 0 00.732 1.767l6.5 6.5a2.5 2.5 0 003.536 0l2.878-2.878a2.5 2.5 0 000-3.536l-6.5-6.5A2.5 2.5 0 008.38 3H5.5zM6 7a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd" />
                 </svg>
                 <span class="text-xs font-semibold">Categories</span>
               </div>
-              <p class="text-[10px]">Coming soon</p>
+              <p class={`text-[10px] ${isDarkMode ? 'text-zinc-400' : 'text-gray-500'}`}>AI tag suggestions</p>
             </button>
           </div>
 
@@ -892,7 +1081,7 @@
           {/if}
 
           <!-- AI Results Section (at bottom, most recent first) -->
-          {#if dailyPlanResult || workloadResult || conflictResult || priorityResult}
+          {#if dailyPlanResult || workloadResult || conflictResult || priorityResult || categoryResult}
             <div class="space-y-3 mt-3">
               {#each actionOrder as actionType}
                 {#if actionType === 'dailyPlan' && dailyPlanResult}
@@ -1007,6 +1196,39 @@
                       </ul>
                     {:else}
                       <p class={`text-xs ${isDarkMode ? 'text-zinc-400' : 'text-gray-500'}`}>No priority changes suggested.</p>
+                    {/if}
+                  </div>
+                {/if}
+
+                {#if actionType === 'category' && categoryResult}
+                  <div class={`rounded-lg p-3 ${isDarkMode ? 'bg-zinc-700' : 'bg-teal-50'}`} transition:slide={{ duration: 200 }}>
+                    <h4 class={`font-semibold text-sm mb-2 ${isDarkMode ? 'text-zinc-200' : 'text-gray-700'}`}>🏷️ Category Suggestions</h4>
+                    <p class={`text-xs mb-3 ${isDarkMode ? 'text-zinc-400' : 'text-gray-600'}`}>{categoryResult.summary}</p>
+                    {#if categoryResult.suggestions?.length > 0}
+                      <ul class="space-y-2">
+                        {#each categoryResult.suggestions as sug}
+                          <li class={`text-xs p-2 rounded ${isDarkMode ? 'bg-zinc-800' : 'bg-white'}`}>
+                            <div class="flex items-center justify-between mb-1">
+                              <span class="font-medium">{sug.taskTitle}</span>
+                              <span class="px-2 py-0.5 rounded text-[10px] font-semibold bg-teal-500 text-white">
+                                {sug.suggestedCategory}
+                              </span>
+                            </div>
+                            {#if sug.suggestedTags?.length > 0}
+                              <div class="flex flex-wrap gap-1 mt-1">
+                                {#each sug.suggestedTags as tag}
+                                  <span class={`px-1.5 py-0.5 rounded text-[9px] ${isDarkMode ? 'bg-zinc-700 text-zinc-300' : 'bg-gray-100 text-gray-600'}`}>
+                                    #{tag}
+                                  </span>
+                                {/each}
+                              </div>
+                            {/if}
+                            <p class={`mt-1 ${isDarkMode ? 'text-zinc-400' : 'text-gray-500'}`}>{sug.reason}</p>
+                          </li>
+                        {/each}
+                      </ul>
+                    {:else}
+                      <p class={`text-xs ${isDarkMode ? 'text-zinc-400' : 'text-gray-500'}`}>No category suggestions available.</p>
                     {/if}
                   </div>
                 {/if}
@@ -1271,6 +1493,7 @@
             on:click={() => {
               breakdownTaskTitle = task.title || '';
               breakdownTaskDescription = task.description || '';
+              breakdownTaskDueDate = task.dueDateISO || task.dueDate || '';
               showTaskPickerModal = false;
             }}
           >
@@ -1328,6 +1551,102 @@
   </div>
 {/if}
 
+<!-- Workspace Name Prompt Modal -->
+{#if showWorkspaceNamePrompt}
+  <div
+    class="fixed inset-0 z-[80] flex items-center justify-center bg-black bg-opacity-60 backdrop-blur-sm p-4"
+    transition:scale={{ duration: 200, easing: quintOut }}
+    on:click|self={() => showWorkspaceNamePrompt = false}
+    role="dialog"
+    aria-modal="true"
+  >
+    <div class={`w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden ${isDarkMode ? 'bg-zinc-800' : 'bg-white'}`}>
+      <!-- Header -->
+      <div class={`px-5 py-4 ${isDarkMode ? 'bg-gradient-to-r from-purple-900/50 to-zinc-800' : 'bg-gradient-to-r from-purple-50 to-white border-b border-gray-200'}`}>
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-full bg-purple-600 flex items-center justify-center">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-5 h-5 text-white">
+              <path fill-rule="evenodd" d="M4.25 2A2.25 2.25 0 002 4.25v11.5A2.25 2.25 0 004.25 18h11.5A2.25 2.25 0 0018 15.75V4.25A2.25 2.25 0 0015.75 2H4.25zM15 5.75a.75.75 0 00-1.5 0v8.5a.75.75 0 001.5 0v-8.5zm-8.5 6a.75.75 0 00-1.5 0v2.5a.75.75 0 001.5 0v-2.5zM8.584 9a.75.75 0 01.75.75v4.5a.75.75 0 01-1.5 0v-4.5a.75.75 0 01.75-.75zm3.58-1.25a.75.75 0 00-1.5 0v6.5a.75.75 0 001.5 0v-6.5z" clip-rule="evenodd" />
+            </svg>
+          </div>
+          <div>
+            <h3 class={`text-lg font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>Create Workspace</h3>
+            <p class={`text-xs ${isDarkMode ? 'text-zinc-400' : 'text-gray-500'}`}>{breakdownSubtasks.length} subtasks will be added</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Content -->
+      <div class="p-5 space-y-4">
+        <div>
+          <label class={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-zinc-300' : 'text-gray-700'}`}>Workspace Name</label>
+          <input
+            type="text"
+            bind:value={workspaceName}
+            placeholder="Enter a custom name..."
+            class={`w-full px-4 py-3 rounded-xl border-2 focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all
+              ${isDarkMode ? 'bg-zinc-700 border-zinc-600 text-zinc-100 placeholder-zinc-500' : 'bg-white border-gray-200 text-gray-800 placeholder-gray-400'}`}
+          />
+        </div>
+
+        <button
+          class={`w-full py-3 rounded-xl font-semibold transition-all flex items-center justify-center gap-2
+            ${isCreatingWorkspace 
+              ? 'bg-gray-400 cursor-not-allowed text-white' 
+              : 'bg-purple-600 hover:bg-purple-700 text-white shadow-lg hover:shadow-xl'}`}
+          on:click={() => createWorkspaceWithSubtasks(false)}
+          disabled={isCreatingWorkspace || !workspaceName.trim()}
+        >
+          {#if isCreatingWorkspace}
+            <span class="animate-spin">⏳</span> Creating...
+          {:else}
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-5 h-5">
+              <path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
+            </svg>
+            Create Workspace
+          {/if}
+        </button>
+
+        <div class="relative">
+          <div class="absolute inset-0 flex items-center">
+            <div class={`w-full border-t ${isDarkMode ? 'border-zinc-700' : 'border-gray-200'}`}></div>
+          </div>
+          <div class="relative flex justify-center">
+            <span class={`px-3 text-xs ${isDarkMode ? 'bg-zinc-800 text-zinc-500' : 'bg-white text-gray-400'}`}>or..</span>
+          </div>
+        </div>
+
+        <button
+          class={`w-full py-3 rounded-xl font-medium transition-all border-2 border-dashed flex items-center justify-center gap-2
+            ${isCreatingWorkspace 
+              ? 'opacity-50 cursor-not-allowed' 
+              : isDarkMode 
+                ? 'border-zinc-600 hover:border-purple-500 hover:bg-purple-500/10 text-zinc-300' 
+                : 'border-gray-300 hover:border-purple-500 hover:bg-purple-50 text-gray-600'}`}
+          on:click={() => createWorkspaceWithSubtasks(true)}
+          disabled={isCreatingWorkspace}
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4">
+            <path d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H3.989a.75.75 0 00-.75.75v4.242a.75.75 0 001.5 0v-2.43l.31.31a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm1.23-3.723a.75.75 0 00.219-.53V2.929a.75.75 0 00-1.5 0v2.43l-.31-.31A7 7 0 003.239 8.188a.75.75 0 101.448.389 5.5 5.5 0 019.202-2.466l.312.311h-2.433a.75.75 0 000 1.5h4.243a.75.75 0 00.53-.219z" />
+          </svg>
+          Use "{breakdownTaskTitle}" automatically
+        </button>
+      </div>
+
+      <!-- Footer Cancel -->
+      <div class={`px-5 py-3 border-t ${isDarkMode ? 'border-zinc-700' : 'border-gray-100'}`}>
+        <button
+          class={`w-full py-2 rounded-lg text-sm font-medium transition-colors
+            ${isDarkMode ? 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}
+          on:click={() => showWorkspaceNamePrompt = false}
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
 <style>
   .custom-scrollbar {
     scrollbar-width: thin;
@@ -1341,5 +1660,19 @@
   .custom-scrollbar::-webkit-scrollbar-thumb {
     background: #6b7280;
     border-radius: 2px;
+  }
+
+  /* Subtle bounce animation for speech bubble */
+  @keyframes bounce-subtle {
+    0%, 100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-3px);
+    }
+  }
+  
+  .animate-bounce-subtle {
+    animation: bounce-subtle 2s ease-in-out infinite;
   }
 </style>

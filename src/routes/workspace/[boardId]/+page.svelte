@@ -243,8 +243,17 @@
         addTaskTargetColumnId = columnId;
         // Reset form fields
         newTaskTitle = '';
-        newTaskDueDate = ''; // Consider pre-filling with today's date
-        newTaskDueTime = ''; // Consider pre-filling
+        // Pre-fill with current date (YYYY-MM-DD format)
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        newTaskDueDate = `${year}-${month}-${day}`;
+        // Pre-fill with current time rounded to nearest 30 min (HH:MM format)
+        let hours = now.getHours();
+        let minutes = now.getMinutes() < 30 ? 30 : 0;
+        if (minutes === 0) hours = (hours + 1) % 24;
+        newTaskDueTime = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
         newTaskDescription = '';
         newTaskPriority = 'standard'; // Default priority
         addTaskFormError = null;

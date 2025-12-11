@@ -15,6 +15,7 @@
 	let loginIdentifier = '';
 	let password = '';
 	let errorMessage: string | null = null;
+	let statusMessage: string | null = null; // For positive status messages (green)
 	let isLoading = false;
 	let showPassword = false;
 	let notificationMessage: string | null = null;
@@ -87,7 +88,7 @@
 			console.log('[DEBUG] Firebase login successful:', user.uid);
 
 			// 2. Get ID Token
-			errorMessage = 'Finalizing login...'; // Update feedback
+			statusMessage = 'Finalizing login...'; // Update feedback (green)
 			const idToken = await user.getIdToken();
 
 			// 3. Create Server Session Cookie
@@ -244,7 +245,7 @@
 			console.log('[DEBUG] Google login successful:', user.uid, user.displayName);
 
 			// 2. Get ID Token
-			errorMessage = 'Finalizing login...'; // Update feedback
+			statusMessage = 'Finalizing login...'; // Update feedback (green)
 			const idToken = await user.getIdToken();
 
 			// 3. Create Server Session Cookie
@@ -322,6 +323,16 @@
                 transition:fade
             >
                 <span class="block sm:inline">{errorMessage}</span>
+            </div>
+        {/if}
+
+        {#if statusMessage}
+            <div
+                class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded relative mb-4 text-sm"
+                role="status"
+                transition:fade
+            >
+                <span class="block sm:inline">{statusMessage}</span>
             </div>
         {/if}
 

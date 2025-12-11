@@ -558,3 +558,81 @@ Be concise and helpful. If the user asks to create a task, suggest they use the 
         return null;
     }
 }
+
+/**
+ * Suggest categories/tags for multiple tasks
+ */
+export interface CategorySuggestion {
+    taskId: string;
+    taskTitle: string;
+    suggestedCategory: string;
+    suggestedTags: string[];
+    reason: string;
+}
+
+export interface CategoryAnalysis {
+    suggestions: CategorySuggestion[];
+    summary: string;
+}
+
+export async function suggestTaskCategories(
+    tasks: CalendarTask[]
+): Promise<CategoryAnalysis | null> {
+    const uncategorizedTasks = tasks.filter(t => !t.isCompleted).slice(0, 15);
+
+    if (uncategorizedTasks.length === 0) {
+        return {
+            suggestions: [],
+            summary: 'No tasks to categorize.'
+        };
+    }
+
+    const tasksList = uncategorizedTasks
+        .map((t, i) => `${i + 1}. ID: "${t.id}" | Title: "${t.title}" | Description: "${t.description || 'N/A'}"`)
+        .join('\n');
+
+    const prompt = `Analyze these tasks and suggest categories and tags for each.
+
+Available Categories: Work, Personal, Health, Study, Shopping, Finance, Home, Social, Travel, Creative, Admin, Other
+
+Tasks to categorize:
+${tasksList}
+
+For each task, provide:
+1. The best matching category
+2. 1-3 relevant tags (short, lowercase, specific)
+3. Brief reason for the categorization
+
+Respond with JSON only:
+{
+    "suggestions": [
+        {
+            "taskId": "task-id-here",
+            "taskTitle": "task title here",
+            "suggestedCategory": "Category",
+            "suggestedTags": ["tag1", "tag2"],
+            "reason": "Short reason"
+        }
+    ],
+    "summary": "Brief overview of the categorization"
+}`;
+
+    const messages: ChatMessageForAPI[] = [
+        { role: 'system', content: 'You are a helpful task categorization assistant. Respond only with valid JSON.' },
+        { role: 'user', content: prompt }
+    ];
+
+    try {
+        const response = await getChatCompletion(messages, false);
+        if (!response) return null;
+
+        const jsonMatch = response.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+            return JSON.parse(jsonMatch[0]) as CategoryAnalysis;
+        }
+        return null;
+    } catch (error) {
+        console.error('[CalendarAI] Error suggesting categories:', error);
+        return null;
+    }
+}

@@ -11,6 +11,7 @@ import {
     detectConflicts,
     calendarChat,
     suggestTaskPriorities,
+    suggestTaskCategories,
     type CalendarTask
 } from '$lib/server/calendarAiService';
 import { breakdownTask } from '$lib/server/aiService';
@@ -113,9 +114,15 @@ export const POST: RequestHandler = async ({ request, locals }) => {
                 return json({ success: true, data: { subtasks } });
             }
 
+            case 'suggest-categories': {
+                const { tasks } = payload || {};
+                const result = await suggestTaskCategories(tasks || []);
+                return json({ success: true, data: result });
+            }
+
             default:
                 return json({
-                    error: `Unknown action: ${action}. Valid actions: suggest-schedule, analyze-workload, parse-task, daily-plan, detect-conflicts, chat, suggest-priorities, breakdown-task`
+                    error: `Unknown action: ${action}. Valid actions: suggest-schedule, analyze-workload, parse-task, daily-plan, detect-conflicts, chat, suggest-priorities, breakdown-task, suggest-categories`
                 }, { status: 400 });
         }
     } catch (error: any) {

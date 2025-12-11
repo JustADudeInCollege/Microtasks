@@ -73,7 +73,6 @@
     { label: '1 week', value: 168 }
   ];
   const repeatOptions = [
-    { label: 'No repeat', value: null },
     { label: '15 minutes', value: 0.25 },
     { label: '30 minutes', value: 0.5 },
     { label: '1 hour', value: 1 },
@@ -84,7 +83,7 @@
   ];
   
   let defaultReminderHours: number = 24;
-  let defaultRepeatIntervalHours: number | null = null;
+  let defaultRepeatIntervalHours: number = 6; // Default to 6 hours
   let emailReminders: boolean = true;
   let notificationMessage = "";
   let notificationMessageType = "";

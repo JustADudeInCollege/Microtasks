@@ -37,6 +37,9 @@
 	"/api/v1/chat": [
 		"src/routes/api/v1/chat/+server.ts"
 	],
+	"/api/workspace": [
+		"src/routes/api/workspace/+server.ts"
+	],
 	"/api/workspace/activity": [
 		"src/routes/api/workspace/activity/+server.ts"
 	],

@@ -80,9 +80,20 @@ export const GET: RequestHandler = async ({ url }) => {
 
       usersProcessedCount++;
 
-      // Get user's reminder preference (default: 24 hours = 1 day before)
+      // Get user's reminder preferences
       const defaultReminderHours: number = notificationSettings.defaultReminderHours ?? 24;
+      const repeatIntervalHours: number = notificationSettings.defaultRepeatIntervalHours ?? 6; // Default to 6 hours
       const userName = userData.username || 'User';
+
+      // Check if enough time has passed since the last email (respect repeat interval)
+      const lastEmailSentAt = userData.lastDailySummarySentAt?.toDate?.() ?? null;
+      if (lastEmailSentAt) {
+        const hoursSinceLastEmail = (now.getTime() - lastEmailSentAt.getTime()) / (1000 * 60 * 60);
+        if (hoursSinceLastEmail < repeatIntervalHours) {
+          console.log(`[API /send-reminders] Skipping ${userName}: Last email was ${hoursSinceLastEmail.toFixed(1)}h ago, interval is ${repeatIntervalHours}h`);
+          continue;
+        }
+      }
 
       // Calculate the date range based on user's preference
       const reminderWindowEnd = addHours(now, defaultReminderHours);
@@ -131,6 +142,11 @@ export const GET: RequestHandler = async ({ url }) => {
       if (emailSent) {
         emailsSentCount++;
         console.log(`[API /send-reminders] Reminder email sent to ${userEmail} with ${emailTasks.length} tasks.`);
+
+        // Update user's last email sent timestamp (for interval checking)
+        await adminDb.collection('credentials').doc(userId).update({
+          lastDailySummarySentAt: admin.firestore.FieldValue.serverTimestamp()
+        });
 
         // Mark tasks as reminded
         for (const taskDoc of tasksSnapshot.docs) {
