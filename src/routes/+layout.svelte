@@ -50,4 +50,8 @@
   <LoadingIndicator />
 {/if}
 
+<svelte:head>
+  <title>Microtask</title>
+</svelte:head>
+
 <slot />

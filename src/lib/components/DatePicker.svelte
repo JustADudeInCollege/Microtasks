@@ -160,8 +160,8 @@
     }
     
     .date-select.dark {
-        background-color: #3f3f46;
-        border-color: #52525b;
+        background-color: #18181b;
+        border-color: #71717a;
         color: #e4e4e7;
     }
     

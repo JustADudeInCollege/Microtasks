@@ -1,31 +1,42 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { page } from '$app/stores';
-  import { goto, invalidateAll } from '$app/navigation';
-  import { browser } from '$app/environment';
-  import { fly, fade, scale } from 'svelte/transition';
-  import { quintOut } from 'svelte/easing';
-  import AppHeader from '$lib/components/AppHeader.svelte';
-  import CalendarAIPanel from '$lib/components/CalendarAIPanel.svelte';
+  import { onMount } from "svelte";
+  import { page } from "$app/stores";
+  import { goto, invalidateAll } from "$app/navigation";
+  import { browser } from "$app/environment";
+  import { fly, fade, scale } from "svelte/transition";
+  import { quintOut } from "svelte/easing";
+  import AppHeader from "$lib/components/AppHeader.svelte";
+  import CalendarAIPanel from "$lib/components/CalendarAIPanel.svelte";
 
   // Firebase imports
-  import { auth, db } from '$lib/firebase.js';
-  import { updateProfile, deleteUser, onAuthStateChanged, type User as FirebaseUser } from 'firebase/auth';
-  import { doc, getDoc, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
+  import { auth, db } from "$lib/firebase.js";
+  import {
+    updateProfile,
+    deleteUser,
+    onAuthStateChanged,
+    type User as FirebaseUser,
+  } from "firebase/auth";
+  import {
+    doc,
+    getDoc,
+    setDoc,
+    updateDoc,
+    deleteDoc,
+  } from "firebase/firestore";
 
   // --- Global App State ---
   let isSidebarOpen = false;
-  let globalUsername = "User"; 
+  let globalUsername = "User";
   let isDarkMode = false;
   let isAIPanelOpen = false;
   let currentDateTime = "";
   let dateTimeInterval: ReturnType<typeof setInterval> | null = null;
   let pageErrorMessage: string | null = null;
-  const dropdownIds = ['notifWindow', 'helpWindow', 'profileWindow'];
+  const dropdownIds = ["notifWindow", "helpWindow", "profileWindow"];
 
   interface PageData {
     error?: string;
-    username?: string; 
+    username?: string;
   }
   export let data: PageData;
 
@@ -36,20 +47,21 @@
 
   // --- Settings Page Specific State ---
   let currentUid: string | null = null;
-  let displayNameInput = "";      
-  let initialDisplayName = "";    
-  
+  let displayNameInput = "";
+  let initialDisplayName = "";
+
   let profilePictureFile: File | null = null;
   let profilePictureBase64: string | null = null;
-  let profilePicturePreview = "https://via.placeholder.com/150/CCCCCC/808080?Text=Avatar";
+  let profilePicturePreview =
+    "https://via.placeholder.com/150/CCCCCC/808080?Text=Avatar";
 
   let isLoadingSave = false;
-  let profileFormMessage = ""; 
-  let profileFormMessageType = ""; 
+  let profileFormMessage = "";
+  let profileFormMessageType = "";
 
   let isLoadingDelete = false;
-  let deleteAccountFormMessage = ""; 
-  let deleteAccountFormMessageType = ""; 
+  let deleteAccountFormMessage = "";
+  let deleteAccountFormMessageType = "";
 
   // --- Accessibility Settings State ---
   let reduceMotion = false;
@@ -62,28 +74,29 @@
 
   // --- Notification Settings State ---
   const reminderOptions = [
-    { label: '15 minutes', value: 0.25 },
-    { label: '30 minutes', value: 0.5 },
-    { label: '1 hour', value: 1 },
-    { label: '2 hours', value: 2 },
-    { label: '6 hours', value: 6 },
-    { label: '12 hours', value: 12 },
-    { label: '1 day', value: 24 },
-    { label: '2 days', value: 48 },
-    { label: '1 week', value: 168 }
+    { label: "15 minutes", value: 0.25 },
+    { label: "30 minutes", value: 0.5 },
+    { label: "1 hour", value: 1 },
+    { label: "2 hours", value: 2 },
+    { label: "6 hours", value: 6 },
+    { label: "12 hours", value: 12 },
+    { label: "1 day", value: 24 },
+    { label: "2 days", value: 48 },
+    { label: "1 week", value: 168 },
   ];
   const repeatOptions = [
-    { label: '15 minutes', value: 0.25 },
-    { label: '30 minutes', value: 0.5 },
-    { label: '1 hour', value: 1 },
-    { label: '2 hours', value: 2 },
-    { label: '6 hours', value: 6 },
-    { label: '12 hours', value: 12 },
-    { label: '24 hours', value: 24 }
+    { label: "No repeat (notify once)", value: 0 },
+    { label: "15 minutes", value: 0.25 },
+    { label: "30 minutes", value: 0.5 },
+    { label: "1 hour", value: 1 },
+    { label: "2 hours", value: 2 },
+    { label: "6 hours", value: 6 },
+    { label: "12 hours", value: 12 },
+    { label: "24 hours", value: 24 },
   ];
-  
+
   let defaultReminderHours: number = 24;
-  let defaultRepeatIntervalHours: number = 6; // Default to 6 hours
+  let defaultRepeatIntervalHours: number | null = null; // null = no repeat by default
   let emailReminders: boolean = true;
   let notificationMessage = "";
   let notificationMessageType = "";
@@ -92,12 +105,13 @@
   // Load accessibility settings from localStorage
   function loadAccessibilitySettings() {
     if (browser) {
-      reduceMotion = localStorage.getItem('reduceMotion') === 'true';
-      highContrast = localStorage.getItem('highContrast') === 'true';
-      largeText = localStorage.getItem('largeText') === 'true';
-      focusIndicators = localStorage.getItem('focusIndicators') !== 'false'; // Default true
-      keyboardNavigation = localStorage.getItem('keyboardNavigation') !== 'false'; // Default true
-      
+      reduceMotion = localStorage.getItem("reduceMotion") === "true";
+      highContrast = localStorage.getItem("highContrast") === "true";
+      largeText = localStorage.getItem("largeText") === "true";
+      focusIndicators = localStorage.getItem("focusIndicators") !== "false"; // Default true
+      keyboardNavigation =
+        localStorage.getItem("keyboardNavigation") !== "false"; // Default true
+
       applyAccessibilitySettings();
     }
   }
@@ -106,40 +120,40 @@
   function applyAccessibilitySettings() {
     if (browser) {
       const root = document.documentElement;
-      
+
       // Reduce motion
       if (reduceMotion) {
-        root.classList.add('reduce-motion');
+        root.classList.add("reduce-motion");
       } else {
-        root.classList.remove('reduce-motion');
+        root.classList.remove("reduce-motion");
       }
-      
+
       // High contrast
       if (highContrast) {
-        root.classList.add('high-contrast');
+        root.classList.add("high-contrast");
       } else {
-        root.classList.remove('high-contrast');
+        root.classList.remove("high-contrast");
       }
-      
+
       // Large text
       if (largeText) {
-        root.classList.add('large-text');
+        root.classList.add("large-text");
       } else {
-        root.classList.remove('large-text');
+        root.classList.remove("large-text");
       }
-      
+
       // Focus indicators
       if (focusIndicators) {
-        root.classList.add('show-focus');
+        root.classList.add("show-focus");
       } else {
-        root.classList.remove('show-focus');
+        root.classList.remove("show-focus");
       }
-      
+
       // Keyboard navigation
       if (keyboardNavigation) {
-        root.classList.add('keyboard-nav');
+        root.classList.add("keyboard-nav");
       } else {
-        root.classList.remove('keyboard-nav');
+        root.classList.remove("keyboard-nav");
       }
     }
   }
@@ -147,14 +161,14 @@
   // Save accessibility settings
   function saveAccessibilitySettings() {
     if (browser) {
-      localStorage.setItem('reduceMotion', reduceMotion.toString());
-      localStorage.setItem('highContrast', highContrast.toString());
-      localStorage.setItem('largeText', largeText.toString());
-      localStorage.setItem('focusIndicators', focusIndicators.toString());
-      localStorage.setItem('keyboardNavigation', keyboardNavigation.toString());
-      
+      localStorage.setItem("reduceMotion", reduceMotion.toString());
+      localStorage.setItem("highContrast", highContrast.toString());
+      localStorage.setItem("largeText", largeText.toString());
+      localStorage.setItem("focusIndicators", focusIndicators.toString());
+      localStorage.setItem("keyboardNavigation", keyboardNavigation.toString());
+
       applyAccessibilitySettings();
-      
+
       accessibilityMessage = "Accessibility settings saved successfully!";
       accessibilityMessageType = "success";
       setTimeout(() => {
@@ -170,20 +184,20 @@
       notificationMessageType = "error";
       return;
     }
-    
+
     isLoadingNotificationSettings = true;
     notificationMessage = "";
-    
+
     try {
       const credRef = doc(db, "credentials", currentUid);
       await updateDoc(credRef, {
         notificationSettings: {
           defaultReminderHours,
           defaultRepeatIntervalHours,
-          emailReminders
-        }
+          emailReminders,
+        },
       });
-      
+
       notificationMessage = "Notification settings saved successfully!";
       notificationMessageType = "success";
       setTimeout(() => {
@@ -191,7 +205,7 @@
       }, 3000);
     } catch (error: any) {
       console.error("Error saving notification settings:", error);
-      notificationMessage = `Failed to save: ${error.message || 'Unknown error'}`;
+      notificationMessage = `Failed to save: ${error.message || "Unknown error"}`;
       notificationMessageType = "error";
     } finally {
       isLoadingNotificationSettings = false;
@@ -199,16 +213,18 @@
   }
 
   async function loadUserProfile(user: FirebaseUser) {
-    isLoadingSave = true; 
+    isLoadingSave = true;
     profileFormMessage = "";
     try {
       currentUid = user.uid;
-      globalUsername = user.displayName || "User"; 
-      displayNameInput = user.displayName || "";   
-      initialDisplayName = displayNameInput;       
+      globalUsername = user.displayName || "User";
+      displayNameInput = user.displayName || "";
+      initialDisplayName = displayNameInput;
 
-      profilePicturePreview = user.photoURL || "https://via.placeholder.com/150/CCCCCC/808080?Text=Avatar";
-      
+      profilePicturePreview =
+        user.photoURL ||
+        "https://via.placeholder.com/150/CCCCCC/808080?Text=Avatar";
+
       // If your `credentials` collection stores a `username` that can be different from Auth's displayName
       // and you want to use that for the input, fetch it here:
       const credRef = doc(db, "credentials", user.uid);
@@ -219,7 +235,7 @@
         // displayNameInput = credData.username || displayNameInput;
         // initialDisplayName = displayNameInput; // Update initial if fetched from Firestore
         // globalUsername = credData.username || globalUsername; // Update global display
-        
+
         // Load saved profile picture from Firestore
         if (credSnap.exists() && credSnap.data().photoBase64) {
           const rawPhoto = credSnap.data().photoBase64;
@@ -227,7 +243,7 @@
           profilePictureBase64 = fixedPhoto;
           profilePicturePreview = fixedPhoto;
         }
-        
+
         // Load notification settings from Firestore
         if (credData.notificationSettings) {
           const ns = credData.notificationSettings;
@@ -246,44 +262,48 @@
   }
 
   // Compress and convert image to Base64
-  async function compressImageToBase64(file: File, maxWidth = 200, quality = 0.7): Promise<string> {
+  async function compressImageToBase64(
+    file: File,
+    maxWidth = 200,
+    quality = 0.7,
+  ): Promise<string> {
     return new Promise((resolve, reject) => {
       const img = new Image();
       img.onload = () => {
-        const canvas = document.createElement('canvas');
+        const canvas = document.createElement("canvas");
         let width = img.width;
         let height = img.height;
-        
+
         // Scale down to maxWidth (keep aspect ratio)
         if (width > maxWidth) {
           height = (height * maxWidth) / width;
           width = maxWidth;
         }
-        
+
         canvas.width = width;
         canvas.height = height;
-        
-        const ctx = canvas.getContext('2d');
+
+        const ctx = canvas.getContext("2d");
         if (!ctx) {
-          reject(new Error('Could not get canvas context'));
+          reject(new Error("Could not get canvas context"));
           return;
         }
-        
+
         ctx.drawImage(img, 0, 0, width, height);
-        const base64 = canvas.toDataURL('image/jpeg', quality);
+        const base64 = canvas.toDataURL("image/jpeg", quality);
         URL.revokeObjectURL(img.src);
-        
+
         // Check size (Firestore has 1MB doc limit, keep image under 500KB to be safe)
         if (base64.length > 500000) {
-          reject(new Error('Image too large. Please use a smaller image.'));
+          reject(new Error("Image too large. Please use a smaller image."));
           return;
         }
-        
+
         resolve(base64);
       };
       img.onerror = () => {
         URL.revokeObjectURL(img.src);
-        reject(new Error('Could not load image'));
+        reject(new Error("Could not load image"));
       };
       img.src = URL.createObjectURL(file);
     });
@@ -294,15 +314,15 @@
     const file = target.files?.[0];
     if (file) {
       // Validate file type
-      if (!file.type.startsWith('image/')) {
+      if (!file.type.startsWith("image/")) {
         profileFormMessage = "Please select a valid image file.";
         profileFormMessageType = "error";
-        target.value = '';
+        target.value = "";
         return;
       }
-      
+
       profilePictureFile = file;
-      
+
       // Show preview immediately
       const reader = new FileReader();
       reader.onload = (e) => {
@@ -327,9 +347,9 @@
       return;
     }
     if (displayNameInput === initialDisplayName && !profilePictureFile) {
-        profileFormMessage = "No changes to save.";
-        profileFormMessageType = ""; 
-        return;
+      profileFormMessage = "No changes to save.";
+      profileFormMessageType = "";
+      return;
     }
 
     isLoadingSave = true;
@@ -338,12 +358,16 @@
 
     try {
       let newPhotoBase64 = profilePictureBase64;
-      
+
       // Compress and convert new profile picture to Base64
       if (profilePictureFile) {
         profileFormMessage = "Processing image...";
         try {
-          newPhotoBase64 = await compressImageToBase64(profilePictureFile, 200, 0.7);
+          newPhotoBase64 = await compressImageToBase64(
+            profilePictureFile,
+            200,
+            0.7,
+          );
         } catch (imgError: any) {
           profileFormMessage = imgError.message || "Failed to process image.";
           profileFormMessageType = "error";
@@ -353,33 +377,39 @@
       }
 
       profileFormMessage = "Saving...";
-      
+
       await updateProfile(auth.currentUser, {
-        displayName: displayNameInput
+        displayName: displayNameInput,
       });
 
       const userDocRef = doc(db, "credentials", currentUid);
-      await setDoc(userDocRef, { 
-        username: displayNameInput,
-        usernameLower: displayNameInput.toLowerCase(), // For case-insensitive login
-        uid: currentUid,
-        photoBase64: newPhotoBase64
-      }, { merge: true }); 
-      
+      await setDoc(
+        userDocRef,
+        {
+          username: displayNameInput,
+          usernameLower: displayNameInput.toLowerCase(), // For case-insensitive login
+          uid: currentUid,
+          photoBase64: newPhotoBase64,
+        },
+        { merge: true },
+      );
+
       globalUsername = displayNameInput;
       initialDisplayName = displayNameInput;
       profilePictureBase64 = newPhotoBase64;
-      profilePicturePreview = newPhotoBase64 || "https://via.placeholder.com/150/CCCCCC/808080?Text=Avatar";
+      profilePicturePreview =
+        newPhotoBase64 ||
+        "https://via.placeholder.com/150/CCCCCC/808080?Text=Avatar";
       profilePictureFile = null;
 
-      if (browser) saveGlobalUsernameToLocalStorage(globalUsername); 
+      if (browser) saveGlobalUsernameToLocalStorage(globalUsername);
 
       profileFormMessage = "Profile updated successfully!";
       profileFormMessageType = "success";
       // invalidateAll(); // If server data needs refresh, but auth state usually handles this for header
     } catch (error: any) {
       console.error("Error updating profile:", error);
-      profileFormMessage = `Failed to update profile: ${error.message || 'Unknown error'}`;
+      profileFormMessage = `Failed to update profile: ${error.message || "Unknown error"}`;
       profileFormMessageType = "error";
     } finally {
       isLoadingSave = false;
@@ -392,7 +422,11 @@
       deleteAccountFormMessageType = "error";
       return;
     }
-    if (!confirm("Are you absolutely sure you want to delete your account and all associated data? This action is permanent and cannot be undone.")) {
+    if (
+      !confirm(
+        "Are you absolutely sure you want to delete your account and all associated data? This action is permanent and cannot be undone.",
+      )
+    ) {
       deleteAccountFormMessage = "Account deletion cancelled.";
       deleteAccountFormMessageType = "";
       return;
@@ -405,7 +439,7 @@
     try {
       const userDocRef = doc(db, "credentials", currentUid);
       await deleteDoc(userDocRef);
-      
+
       // !!! IMPORTANT: Add logic here to delete other user-specific data from Firestore (tasks, notes, etc.) !!!
       // Example (conceptual):
       // const tasksQuery = query(collection(db, 'tasks'), where('userId', '==', currentUid));
@@ -416,18 +450,19 @@
 
       await deleteUser(auth.currentUser);
 
-      deleteAccountFormMessage = "Account deleted successfully. You will be logged out.";
+      deleteAccountFormMessage =
+        "Account deleted successfully. You will be logged out.";
       deleteAccountFormMessageType = "success";
-      
-      setTimeout(() => {
-        handleLogout(); 
-      }, 2500);
 
+      setTimeout(() => {
+        handleLogout();
+      }, 2500);
     } catch (error: any) {
       console.error("Error deleting account:", error);
-      deleteAccountFormMessage = `Failed to delete account: ${error.message || 'Unknown error'}`;
-      if (error.code === 'auth/requires-recent-login') {
-        deleteAccountFormMessage += " This operation is sensitive. Please log out, log back in, then try again.";
+      deleteAccountFormMessage = `Failed to delete account: ${error.message || "Unknown error"}`;
+      if (error.code === "auth/requires-recent-login") {
+        deleteAccountFormMessage +=
+          " This operation is sensitive. Please log out, log back in, then try again.";
       }
       deleteAccountFormMessageType = "error";
     } finally {
@@ -438,43 +473,63 @@
   function toggleDarkMode() {
     isDarkMode = !isDarkMode;
     if (browser) {
-      document.documentElement.classList.toggle('dark', isDarkMode);
-      document.body.classList.toggle('dark', isDarkMode);
-      localStorage.setItem('theme', isDarkMode ? 'dark' : 'light');
+      document.documentElement.classList.toggle("dark", isDarkMode);
+      document.body.classList.toggle("dark", isDarkMode);
+      localStorage.setItem("theme", isDarkMode ? "dark" : "light");
     }
   }
-  function toggleSidebar() { isSidebarOpen = !isSidebarOpen; }
-  function closeSidebar() { isSidebarOpen = false; }
-  function toggleWindow(id: string) { /* ... as before ... */ }
-  function closeOtherWindows(currentId: string) { /* ... as before ... */ }
-  
-  function getStoredGlobalUsernameFromLocalStorage(): string { if (browser) return localStorage.getItem('microtask_global_username') || "User"; return "User"; }
-  function saveGlobalUsernameToLocalStorage(name: string): void { if (browser) localStorage.setItem('microtask_global_username', name); }
-  
-  function handleLogout() { 
-    if (browser) { 
-      auth.signOut().then(() => {
-        saveGlobalUsernameToLocalStorage("User"); 
-        goto('/login');
-      }).catch(error => {
-        console.error("Logout failed:", error);
-        pageErrorMessage = "Logout failed. Please try again.";
-      });
-    } 
+  function toggleSidebar() {
+    isSidebarOpen = !isSidebarOpen;
+  }
+  function closeSidebar() {
+    isSidebarOpen = false;
+  }
+  function toggleWindow(id: string) {
+    /* ... as before ... */
+  }
+  function closeOtherWindows(currentId: string) {
+    /* ... as before ... */
+  }
+
+  function getStoredGlobalUsernameFromLocalStorage(): string {
+    if (browser)
+      return localStorage.getItem("microtask_global_username") || "User";
+    return "User";
+  }
+  function saveGlobalUsernameToLocalStorage(name: string): void {
+    if (browser) localStorage.setItem("microtask_global_username", name);
+  }
+
+  function handleLogout() {
+    if (browser) {
+      if (!confirm("Are you sure you want to log out?")) {
+        return;
+      }
+      auth
+        .signOut()
+        .then(() => {
+          saveGlobalUsernameToLocalStorage("User");
+          goto("/login");
+        })
+        .catch((error) => {
+          console.error("Logout failed:", error);
+          pageErrorMessage = "Logout failed. Please try again.";
+        });
+    }
   }
 
   function updateDateTime() {
     const now = new Date();
     const options: Intl.DateTimeFormatOptions = {
-      weekday: 'long',
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: 'numeric',
-      hour12: true
+      weekday: "long",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      hour: "numeric",
+      minute: "numeric",
+      hour12: true,
     };
-    currentDateTime = now.toLocaleDateString('en-US', options);
+    currentDateTime = now.toLocaleDateString("en-US", options);
   }
 
   onMount(() => {
@@ -483,27 +538,30 @@
         await loadUserProfile(user);
       } else {
         currentUid = null;
-        globalUsername = getStoredGlobalUsernameFromLocalStorage(); 
-        displayNameInput = ""; 
+        globalUsername = getStoredGlobalUsernameFromLocalStorage();
+        displayNameInput = "";
         initialDisplayName = "";
-        profilePicturePreview = "https://via.placeholder.com/150/CCCCCC/808080?Text=Avatar";
-        if ($page.url.pathname.includes('/settings')) { 
-           // If already on settings and auth is lost, consider a softer message or let server redirect handle it
-           // For now, server redirect will handle it if this fires before page load completion
+        profilePicturePreview =
+          "https://via.placeholder.com/150/CCCCCC/808080?Text=Avatar";
+        if ($page.url.pathname.includes("/settings")) {
+          // If already on settings and auth is lost, consider a softer message or let server redirect handle it
+          // For now, server redirect will handle it if this fires before page load completion
         }
       }
     });
 
     if (browser) {
-      const savedTheme = localStorage.getItem('theme');
-      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      isDarkMode = savedTheme === 'dark' || (!savedTheme && prefersDark);
-      document.documentElement.classList.toggle('dark', isDarkMode);
-      document.body.classList.toggle('dark', isDarkMode);
+      const savedTheme = localStorage.getItem("theme");
+      const prefersDark = window.matchMedia(
+        "(prefers-color-scheme: dark)",
+      ).matches;
+      isDarkMode = savedTheme === "dark" || (!savedTheme && prefersDark);
+      document.documentElement.classList.toggle("dark", isDarkMode);
+      document.body.classList.toggle("dark", isDarkMode);
       if (!auth.currentUser && !data?.username) {
-          globalUsername = getStoredGlobalUsernameFromLocalStorage();
+        globalUsername = getStoredGlobalUsernameFromLocalStorage();
       }
-      
+
       // Load accessibility settings
       loadAccessibilitySettings();
     }
@@ -519,30 +577,43 @@
   });
 
   function ensureBase64Prefix(base64: string): string {
-    if (!base64) return '';
-    if (base64.startsWith('data:image')) return base64;
-    if (base64.startsWith('http')) return base64; 
+    if (!base64) return "";
+    if (base64.startsWith("data:image")) return base64;
+    if (base64.startsWith("http")) return base64;
     return `data:image/jpeg;base64,${base64}`;
   }
 
   function handleImageError() {
-    if (auth.currentUser?.photoURL && profilePicturePreview !== auth.currentUser.photoURL) {
-      console.log('Profile preview failed, falling back to Auth photo');
+    if (
+      auth.currentUser?.photoURL &&
+      profilePicturePreview !== auth.currentUser.photoURL
+    ) {
+      console.log("Profile preview failed, falling back to Auth photo");
       profilePicturePreview = auth.currentUser.photoURL;
     } else {
-      profilePicturePreview = "https://via.placeholder.com/150/CCCCCC/808080?Text=Avatar";
+      profilePicturePreview =
+        "https://via.placeholder.com/150/CCCCCC/808080?Text=Avatar";
     }
   }
 </script>
 
 <!-- HTML Structure (Sidebar, Header, Settings Content) -->
-<div class={`flex h-screen font-sans ${isDarkMode ? 'dark bg-zinc-900 text-zinc-300' : 'bg-gray-100 text-gray-800'}`}>
+<div
+  class={`flex h-screen font-sans ${isDarkMode ? "dark bg-zinc-900 text-zinc-300" : "bg-gray-100 text-gray-800"}`}
+>
   {#if pageErrorMessage}
     <!-- Page Error Message Display -->
-    <div class="fixed top-4 right-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded shadow-md z-[100]" role="alert">
+    <div
+      class="fixed top-4 right-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded shadow-md z-[100]"
+      role="alert"
+    >
       <strong class="font-bold">Error:</strong>
       <span class="block sm:inline">{pageErrorMessage}</span>
-      <button on:click={() => pageErrorMessage = null} class="absolute top-0 bottom-0 right-0 px-4 py-3" aria-label="Close error">
+      <button
+        on:click={() => (pageErrorMessage = null)}
+        class="absolute top-0 bottom-0 right-0 px-4 py-3"
+        aria-label="Close error"
+      >
         <span class="text-xl">×</span>
       </button>
     </div>
@@ -552,73 +623,241 @@
     <!-- Sidebar HTML (from your previous code) -->
     <div
       id="sidebar"
-      class={`fixed top-0 left-0 h-full w-64 shadow-lg z-50 flex flex-col justify-between p-4 border-r ${isDarkMode ? 'bg-zinc-800 border-zinc-700' : 'bg-white border-gray-200'}`}
+      class={`fixed top-0 left-0 h-full w-64 shadow-lg z-50 flex flex-col justify-between p-4 border-r ${isDarkMode ? "bg-zinc-800 border-zinc-700" : "bg-white border-gray-200"}`}
       transition:fly={{ x: -300, duration: 300, easing: quintOut }}
     >
       <div>
-        <div class={`flex items-center justify-between mb-8 pb-4 border-b ${isDarkMode ? 'border-zinc-700' : 'border-gray-200'}`}>
+        <div
+          class={`flex items-center justify-between mb-8 pb-4 border-b ${isDarkMode ? "border-zinc-700" : "border-gray-200"}`}
+        >
           <div class="flex items-center gap-2">
-            <img src={isDarkMode ? "/logonamindarkmode.png" : "/logonamin.png"} alt="Microtask Logo" class="w-8 h-8" />
-            <h1 class={`text-xl font-bold ${isDarkMode ? 'text-zinc-100' : 'text-gray-800'}`}>Microtask</h1>
+            <img
+              src={isDarkMode ? "/logonamindarkmode.png" : "/logonamin.png"}
+              alt="Microtask Logo"
+              class="w-8 h-8"
+            />
+            <h1
+              class={`text-xl font-bold ${isDarkMode ? "text-zinc-100" : "text-gray-800"}`}
+            >
+              Microtask
+            </h1>
           </div>
-          <button on:click={closeSidebar} class={`p-1 rounded-md transition-colors ${isDarkMode ? 'hover:bg-zinc-700 text-zinc-400' : 'hover:bg-gray-100 text-gray-500'}`} aria-label="Close sidebar">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+          <button
+            on:click={closeSidebar}
+            class={`p-1 rounded-md transition-colors ${isDarkMode ? "hover:bg-zinc-700 text-zinc-400" : "hover:bg-gray-100 text-gray-500"}`}
+            aria-label="Close sidebar"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke-width="2"
+              stroke="currentColor"
+              class="w-5 h-5"
+              ><path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M6 18L18 6M6 6l12 12"
+              /></svg
+            >
           </button>
         </div>
         <nav class="flex flex-col gap-2">
           <!-- Sidebar Links -->
-          <a href="/home" class="flex items-center gap-3 px-3 py-2 rounded-md font-semibold transition-colors duration-150" class:text-gray-700={!isDarkMode} class:text-zinc-300={isDarkMode} class:hover:bg-gray-100={!isDarkMode} class:hover:bg-zinc-700={isDarkMode} class:bg-blue-600={$page.url.pathname === '/home' && !isDarkMode} class:bg-blue-800={$page.url.pathname === '/home' && isDarkMode} class:text-white={$page.url.pathname === '/home'}>
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5" aria-hidden="true"><path d="M11.47 3.84a.75.75 0 011.06 0l8.69 8.69a.75.75 0 101.06-1.06l-8.689-8.69a2.25 2.25 0 00-3.182 0l-8.69 8.69a.75.75 0 001.061 1.06l8.69-8.69z" /><path d="M12 5.432l8.159 8.159c.03.03.06.058.091.086v6.198c0 1.035-.84 1.875-1.875 1.875H15a.75.75 0 01-.75-.75v-4.5a.75.75 0 00-.75-.75h-3a.75.75 0 00-.75.75V21a.75.75 0 01-.75.75H5.625a1.875 1.875 0 01-1.875-1.875v-6.198a2.29 2.29 0 00.091-.086L12 5.43z" /></svg>
+          <a
+            href="/home"
+            class="flex items-center gap-3 px-3 py-2 rounded-md font-semibold transition-colors duration-150"
+            class:text-gray-700={!isDarkMode}
+            class:text-zinc-300={isDarkMode}
+            class:hover:bg-gray-100={!isDarkMode}
+            class:hover:bg-zinc-700={isDarkMode}
+            class:bg-blue-600={$page.url.pathname === "/home" && !isDarkMode}
+            class:bg-blue-800={$page.url.pathname === "/home" && isDarkMode}
+            class:text-white={$page.url.pathname === "/home"}
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="currentColor"
+              class="w-5 h-5"
+              aria-hidden="true"
+              ><path
+                d="M11.47 3.84a.75.75 0 011.06 0l8.69 8.69a.75.75 0 101.06-1.06l-8.689-8.69a2.25 2.25 0 00-3.182 0l-8.69 8.69a.75.75 0 001.061 1.06l8.69-8.69z"
+              /><path
+                d="M12 5.432l8.159 8.159c.03.03.06.058.091.086v6.198c0 1.035-.84 1.875-1.875 1.875H15a.75.75 0 01-.75-.75v-4.5a.75.75 0 00-.75-.75h-3a.75.75 0 00-.75.75V21a.75.75 0 01-.75.75H5.625a1.875 1.875 0 01-1.875-1.875v-6.198a2.29 2.29 0 00.091-.086L12 5.43z"
+              /></svg
+            >
             <span>Home</span>
           </a>
-           <a href="/dashboard" class="flex items-center gap-3 px-3 py-2 rounded-md font-semibold transition-colors duration-150" class:text-gray-700={!isDarkMode} class:text-zinc-300={isDarkMode} class:hover:bg-gray-100={!isDarkMode} class:hover:bg-zinc-700={isDarkMode} class:bg-blue-600={$page.url.pathname === '/dashboard' && !isDarkMode} class:bg-blue-800={$page.url.pathname === '/dashboard' && isDarkMode} class:text-white={$page.url.pathname === '/dashboard'}>
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5" aria-hidden="true"> <path d="M10.5 4.5a1.5 1.5 0 00-3 0v15a1.5 1.5 0 003 0V4.5z" /> <path d="M4.5 10.5a1.5 1.5 0 000 3h15a1.5 1.5 0 000-3h-15z" /> <path fill-rule="evenodd" d="M1.5 3A1.5 1.5 0 013 1.5h18A1.5 1.5 0 0122.5 3v18a1.5 1.5 0 01-1.5 1.5H3A1.5 1.5 0 011.5 21V3zm1.5.75v16.5h16.5V3.75H3z" clip-rule="evenodd" /></svg>
+          <a
+            href="/dashboard"
+            class="flex items-center gap-3 px-3 py-2 rounded-md font-semibold transition-colors duration-150"
+            class:text-gray-700={!isDarkMode}
+            class:text-zinc-300={isDarkMode}
+            class:hover:bg-gray-100={!isDarkMode}
+            class:hover:bg-zinc-700={isDarkMode}
+            class:bg-blue-600={$page.url.pathname === "/dashboard" &&
+              !isDarkMode}
+            class:bg-blue-800={$page.url.pathname === "/dashboard" &&
+              isDarkMode}
+            class:text-white={$page.url.pathname === "/dashboard"}
+          >
+            <img
+              src={isDarkMode ? "/dashboarddark.png" : "/dashboard.png"}
+              alt="Dashboard"
+              class="w-5 h-5"
+              aria-hidden="true"
+            />
             <span>Dashboard</span>
           </a>
-           <a href="/tasks" class="flex items-center gap-3 px-3 py-2 rounded-md font-semibold transition-colors duration-150" class:text-gray-700={!isDarkMode} class:text-zinc-300={isDarkMode} class:hover:bg-gray-100={!isDarkMode} class:hover:bg-zinc-700={isDarkMode} class:bg-blue-600={$page.url.pathname === '/tasks' && !isDarkMode} class:bg-blue-800={$page.url.pathname === '/tasks' && isDarkMode} class:text-white={$page.url.pathname === '/tasks'}>
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 0 0 2.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 0 0-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 0 0 .75-.75 2.25 2.25 0 0 0-.1-.664m-5.8 0A2.251 2.251 0 0 1 13.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25ZM6.75 12h.008v.008H6.75V12Zm0 3h.008v.008H6.75V15Zm0 3h.008v.008H6.75V18Z" /></svg>
+          <a
+            href="/tasks"
+            class="flex items-center gap-3 px-3 py-2 rounded-md font-semibold transition-colors duration-150"
+            class:text-gray-700={!isDarkMode}
+            class:text-zinc-300={isDarkMode}
+            class:hover:bg-gray-100={!isDarkMode}
+            class:hover:bg-zinc-700={isDarkMode}
+            class:bg-blue-600={$page.url.pathname === "/tasks" && !isDarkMode}
+            class:bg-blue-800={$page.url.pathname === "/tasks" && isDarkMode}
+            class:text-white={$page.url.pathname === "/tasks"}
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke-width="1.5"
+              stroke="currentColor"
+              class="w-5 h-5"
+              aria-hidden="true"
+              ><path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 0 0 2.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 0 0-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 0 0 .75-.75 2.25 2.25 0 0 0-.1-.664m-5.8 0A2.251 2.251 0 0 1 13.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25ZM6.75 12h.008v.008H6.75V12Zm0 3h.008v.008H6.75V15Zm0 3h.008v.008H6.75V18Z"
+              /></svg
+            >
             <span>All Tasks</span>
           </a>
-           <a href="/calendar" class="flex items-center gap-3 px-3 py-2 rounded-md font-semibold transition-colors duration-150" class:text-gray-700={!isDarkMode} class:text-zinc-300={isDarkMode} class:hover:bg-gray-100={!isDarkMode} class:hover:bg-zinc-700={isDarkMode} class:bg-blue-600={$page.url.pathname === '/calendar' && !isDarkMode} class:bg-blue-800={$page.url.pathname === '/calendar' && isDarkMode} class:text-white={$page.url.pathname === '/calendar'}>
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5" aria-hidden="true"><path fill-rule="evenodd" d="M6.75 2.25A.75.75 0 017.5 3v1.5h9V3A.75.75 0 0118 3v1.5h.75a3 3 0 013 3v11.25a3 3 0 01-3 3H5.25a3 3 0 01-3-3V7.5a3 3 0 013-3H6V3a.75.75 0 01.75-.75zM5.25 6.75c-.621 0-1.125.504-1.125 1.125V18a1.125 1.125 0 001.125 1.125h13.5A1.125 1.125 0 0019.875 18V7.875c0-.621-.504-1.125-1.125-1.125H5.25z" clip-rule="evenodd" /><path d="M10.5 9.75a.75.75 0 00-1.5 0v.01c0 .414.336.75.75.75H10.5v-.01a.75.75 0 000-1.5zM10.5 12.75a.75.75 0 00-1.5 0v.01c0 .414.336.75.75.75H10.5v-.01a.75.75 0 000-1.5zM10.5 15.75a.75.75 0 00-1.5 0v.01c0 .414.336.75.75.75H10.5v-.01a.75.75 0 000-1.5zM13.5 9.75a.75.75 0 00-1.5 0v.01c0 .414.336.75.75.75H13.5v-.01a.75.75 0 000-1.5zM13.5 12.75a.75.75 0 00-1.5 0v.01c0 .414.336.75.75.75H13.5v-.01a.75.75 0 000-1.5zM13.5 15.75a.75.75 0 00-1.5 0v.01c0 .414.336.75.75.75H13.5v-.01a.75.75 0 000-1.5zM16.5 9.75a.75.75 0 00-1.5 0v.01c0 .414.336.75.75.75H16.5v-.01a.75.75 0 000-1.5zM16.5 12.75a.75.75 0 00-1.5 0v.01c0 .414.336.75.75.75H16.5v-.01a.75.75 0 000-1.5zM16.5 15.75a.75.75 0 00-1.5 0v.01c0 .414.336.75.75.75H16.5v-.01a.75.75 0 000-1.5z"/></svg>
+          <a
+            href="/calendar"
+            class="flex items-center gap-3 px-3 py-2 rounded-md font-semibold transition-colors duration-150"
+            class:text-gray-700={!isDarkMode}
+            class:text-zinc-300={isDarkMode}
+            class:hover:bg-gray-100={!isDarkMode}
+            class:hover:bg-zinc-700={isDarkMode}
+            class:bg-blue-600={$page.url.pathname === "/calendar" &&
+              !isDarkMode}
+            class:bg-blue-800={$page.url.pathname === "/calendar" && isDarkMode}
+            class:text-white={$page.url.pathname === "/calendar"}
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="currentColor"
+              class="w-5 h-5"
+              aria-hidden="true"
+              ><path
+                fill-rule="evenodd"
+                d="M6.75 2.25A.75.75 0 017.5 3v1.5h9V3A.75.75 0 0118 3v1.5h.75a3 3 0 013 3v11.25a3 3 0 01-3 3H5.25a3 3 0 01-3-3V7.5a3 3 0 013-3H6V3a.75.75 0 01.75-.75zM5.25 6.75c-.621 0-1.125.504-1.125 1.125V18a1.125 1.125 0 001.125 1.125h13.5A1.125 1.125 0 0019.875 18V7.875c0-.621-.504-1.125-1.125-1.125H5.25z"
+                clip-rule="evenodd"
+              /><path
+                d="M10.5 9.75a.75.75 0 00-1.5 0v.01c0 .414.336.75.75.75H10.5v-.01a.75.75 0 000-1.5zM10.5 12.75a.75.75 0 00-1.5 0v.01c0 .414.336.75.75.75H10.5v-.01a.75.75 0 000-1.5zM10.5 15.75a.75.75 0 00-1.5 0v.01c0 .414.336.75.75.75H10.5v-.01a.75.75 0 000-1.5zM13.5 9.75a.75.75 0 00-1.5 0v.01c0 .414.336.75.75.75H13.5v-.01a.75.75 0 000-1.5zM13.5 12.75a.75.75 0 00-1.5 0v.01c0 .414.336.75.75.75H13.5v-.01a.75.75 0 000-1.5zM13.5 15.75a.75.75 0 00-1.5 0v.01c0 .414.336.75.75.75H13.5v-.01a.75.75 0 000-1.5zM16.5 9.75a.75.75 0 00-1.5 0v.01c0 .414.336.75.75.75H16.5v-.01a.75.75 0 000-1.5zM16.5 12.75a.75.75 0 00-1.5 0v.01c0 .414.336.75.75.75H16.5v-.01a.75.75 0 000-1.5zM16.5 15.75a.75.75 0 00-1.5 0v.01c0 .414.336.75.75.75H16.5v-.01a.75.75 0 000-1.5z"
+              /></svg
+            >
             <span>Calendar</span>
           </a>
-           <a href="/workspace" class="flex items-center gap-3 px-3 py-2 rounded-md font-semibold transition-colors duration-150" class:text-gray-700={!isDarkMode} class:text-zinc-300={isDarkMode} class:hover:bg-gray-100={!isDarkMode} class:hover:bg-zinc-700={isDarkMode} class:bg-blue-600={$page.url.pathname === '/workspace' && !isDarkMode} class:bg-blue-800={$page.url.pathname === '/workspace' && isDarkMode} class:text-white={$page.url.pathname === '/workspace'}>
-             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M20.25 14.15v4.098a2.25 2.25 0 0 1-2.25 2.25h-12a2.25 2.25 0 0 1-2.25-2.25V14.15M18 18.75h.75A2.25 2.25 0 0 0 21 16.5v-1.5a2.25 2.25 0 0 0-2.25-2.25h-15A2.25 2.25 0 0 0 1.5 15v1.5A2.25 2.25 0 0 0 3.75 18.75H4.5M12 12.75a3 3 0 0 0-3-3H5.25V7.5a3 3 0 0 1 3-3h7.5a3 3 0 0 1 3 3v2.25H15a3 3 0 0 0-3 3Z" /></svg>
+          <a
+            href="/workspace"
+            class="flex items-center gap-3 px-3 py-2 rounded-md font-semibold transition-colors duration-150"
+            class:text-gray-700={!isDarkMode}
+            class:text-zinc-300={isDarkMode}
+            class:hover:bg-gray-100={!isDarkMode}
+            class:hover:bg-zinc-700={isDarkMode}
+            class:bg-blue-600={$page.url.pathname === "/workspace" &&
+              !isDarkMode}
+            class:bg-blue-800={$page.url.pathname === "/workspace" &&
+              isDarkMode}
+            class:text-white={$page.url.pathname === "/workspace"}
+          >
+            <img
+              src={isDarkMode ? "/Workspacedark.png" : "/workspacee.png"}
+              alt="Workspace"
+              class="w-5 h-5"
+              aria-hidden="true"
+            />
             <span>Workspace</span>
           </a>
         </nav>
       </div>
-      <button on:click={handleLogout} class="flex items-center gap-3 px-3 py-2 rounded-md font-semibold w-full mt-auto transition-colors duration-150" class:hover:bg-gray-100={!isDarkMode} class:hover:bg-zinc-700={isDarkMode} class:text-gray-700={!isDarkMode} class:text-zinc-300={isDarkMode}>
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15m3 0 3-3m0 0-3-3m3 3H9" /></svg>
+      <button
+        on:click={handleLogout}
+        class="flex items-center gap-3 px-3 py-2 rounded-md font-semibold w-full mt-auto transition-colors duration-150"
+        class:hover:bg-gray-100={!isDarkMode}
+        class:hover:bg-zinc-700={isDarkMode}
+        class:text-gray-700={!isDarkMode}
+        class:text-zinc-300={isDarkMode}
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke-width="1.5"
+          stroke="currentColor"
+          class="w-5 h-5"
+          aria-hidden="true"
+          ><path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15m3 0 3-3m0 0-3-3m3 3H9"
+          /></svg
+        >
         <span>Log out</span>
       </button>
     </div>
   {/if}
 
   <div class="flex-1 flex flex-col overflow-hidden">
-    <AppHeader {isDarkMode} username={globalUsername} {currentDateTime} on:toggleSidebar={toggleSidebar} on:toggleDarkMode={toggleDarkMode} on:logout={handleLogout} />
+    <AppHeader
+      {isDarkMode}
+      username={globalUsername}
+      {currentDateTime}
+      on:toggleSidebar={toggleSidebar}
+      on:toggleDarkMode={toggleDarkMode}
+      on:logout={handleLogout}
+    />
 
-    <div class="flex-1 overflow-y-auto pt-[60px] flex flex-col custom-scrollbar">
+    <div
+      class="flex-1 overflow-y-auto pt-[60px] flex flex-col custom-scrollbar"
+    >
       <div class="settings-page">
         <h1>Account Settings</h1>
-        
+
         <section class="settings-section">
           <h2>Profile Information</h2>
-          <p class="welcome-message">Welcome, {globalUsername || 'User'}!</p>
-          
+          <p class="welcome-message">Welcome, {globalUsername || "User"}!</p>
+
           <div class="profile-form-grid">
             <div class="form-group profile-picture-group">
               <label for="profilePictureInput">Profile Picture</label>
               <div class="profile-picture-controls">
-                <img 
-                  src={profilePicturePreview} 
-                  alt="Profile Preview" 
-                  class="profile-preview" 
+                <img
+                  src={profilePicturePreview}
+                  alt="Profile Preview"
+                  class="profile-preview"
                   on:error={handleImageError}
                 />
-                <input type="file" id="profilePictureInput" accept="image/*" on:change={handleProfilePictureInputChange} style="display: none;" />
-                <button type="button" class="button button-secondary upload-button" on:click={() => document.getElementById('profilePictureInput')?.click()}>
+                <input
+                  type="file"
+                  id="profilePictureInput"
+                  accept="image/*"
+                  on:change={handleProfilePictureInputChange}
+                  style="display: none;"
+                />
+                <button
+                  type="button"
+                  class="button button-secondary upload-button"
+                  on:click={() =>
+                    document.getElementById("profilePictureInput")?.click()}
+                >
                   Choose Image
                 </button>
               </div>
@@ -626,11 +865,20 @@
 
             <div class="form-group full-width-profile-field">
               <label for="displayNameInput">Display Name</label>
-              <input type="text" id="displayNameInput" bind:value={displayNameInput} placeholder="Your public display name" />
+              <input
+                type="text"
+                id="displayNameInput"
+                bind:value={displayNameInput}
+                placeholder="Your public display name"
+              />
             </div>
           </div>
 
-          <button class="button button-primary" on:click={handleSaveProfileInfo} disabled={isLoadingSave}>
+          <button
+            class="button button-primary"
+            on:click={handleSaveProfileInfo}
+            disabled={isLoadingSave}
+          >
             {#if isLoadingSave}Saving...{:else}Save Profile Info{/if}
           </button>
           {#if profileFormMessage}
@@ -640,18 +888,24 @@
 
         <section class="settings-section">
           <h2>Accessibility Settings</h2>
-          <p class="section-description">Customize your experience to better suit your needs.</p>
-          
+          <p class="section-description">
+            Customize your experience to better suit your needs.
+          </p>
+
           <div class="accessibility-options">
             <div class="accessibility-option">
               <div class="option-info">
-                <label for="reduceMotion" class="option-label">Reduce Motion</label>
-                <p class="option-description">Minimize animations and transitions throughout the app.</p>
+                <label for="reduceMotion" class="option-label"
+                  >Reduce Motion</label
+                >
+                <p class="option-description">
+                  Minimize animations and transitions throughout the app.
+                </p>
               </div>
               <label class="toggle-switch">
-                <input 
-                  type="checkbox" 
-                  id="reduceMotion" 
+                <input
+                  type="checkbox"
+                  id="reduceMotion"
                   bind:checked={reduceMotion}
                   on:change={saveAccessibilitySettings}
                 />
@@ -661,13 +915,17 @@
 
             <div class="accessibility-option">
               <div class="option-info">
-                <label for="highContrast" class="option-label">High Contrast</label>
-                <p class="option-description">Increase contrast for better visibility.</p>
+                <label for="highContrast" class="option-label"
+                  >High Contrast</label
+                >
+                <p class="option-description">
+                  Increase contrast for better visibility.
+                </p>
               </div>
               <label class="toggle-switch">
-                <input 
-                  type="checkbox" 
-                  id="highContrast" 
+                <input
+                  type="checkbox"
+                  id="highContrast"
                   bind:checked={highContrast}
                   on:change={saveAccessibilitySettings}
                 />
@@ -678,12 +936,14 @@
             <div class="accessibility-option">
               <div class="option-info">
                 <label for="largeText" class="option-label">Large Text</label>
-                <p class="option-description">Increase text size for easier reading.</p>
+                <p class="option-description">
+                  Increase text size for easier reading.
+                </p>
               </div>
               <label class="toggle-switch">
-                <input 
-                  type="checkbox" 
-                  id="largeText" 
+                <input
+                  type="checkbox"
+                  id="largeText"
                   bind:checked={largeText}
                   on:change={saveAccessibilitySettings}
                 />
@@ -693,13 +953,17 @@
 
             <div class="accessibility-option">
               <div class="option-info">
-                <label for="focusIndicators" class="option-label">Enhanced Focus Indicators</label>
-                <p class="option-description">Show prominent focus outlines when navigating with keyboard.</p>
+                <label for="focusIndicators" class="option-label"
+                  >Enhanced Focus Indicators</label
+                >
+                <p class="option-description">
+                  Show prominent focus outlines when navigating with keyboard.
+                </p>
               </div>
               <label class="toggle-switch">
-                <input 
-                  type="checkbox" 
-                  id="focusIndicators" 
+                <input
+                  type="checkbox"
+                  id="focusIndicators"
                   bind:checked={focusIndicators}
                   on:change={saveAccessibilitySettings}
                 />
@@ -709,13 +973,17 @@
 
             <div class="accessibility-option">
               <div class="option-info">
-                <label for="keyboardNavigation" class="option-label">Keyboard Navigation Hints</label>
-                <p class="option-description">Display keyboard shortcuts and navigation hints.</p>
+                <label for="keyboardNavigation" class="option-label"
+                  >Keyboard Navigation Hints</label
+                >
+                <p class="option-description">
+                  Display keyboard shortcuts and navigation hints.
+                </p>
               </div>
               <label class="toggle-switch">
-                <input 
-                  type="checkbox" 
-                  id="keyboardNavigation" 
+                <input
+                  type="checkbox"
+                  id="keyboardNavigation"
                   bind:checked={keyboardNavigation}
                   on:change={saveAccessibilitySettings}
                 />
@@ -725,69 +993,106 @@
           </div>
 
           {#if accessibilityMessage}
-            <p class="message {accessibilityMessageType}">{accessibilityMessage}</p>
+            <p class="message {accessibilityMessageType}">
+              {accessibilityMessage}
+            </p>
           {/if}
         </section>
 
         <section class="settings-section">
           <h2>Notification Preferences</h2>
-          <p class="section-description">Configure when and how you receive deadline reminders.</p>
-          
+          <p class="section-description">
+            Configure when and how you receive deadline reminders.
+          </p>
+
           <div class="notification-settings-grid">
             <div class="form-group">
               <label for="defaultReminderHours">First Reminder</label>
-              <p class="input-hint">How long before a deadline should we remind you?</p>
-              <select id="defaultReminderHours" bind:value={defaultReminderHours} class="settings-select">
+              <p class="input-hint">
+                How long before a deadline should we remind you?
+              </p>
+              <select
+                id="defaultReminderHours"
+                bind:value={defaultReminderHours}
+                class="settings-select"
+              >
                 {#each reminderOptions as option}
                   <option value={option.value}>{option.label}</option>
                 {/each}
               </select>
             </div>
-            
+
             <div class="form-group">
               <label for="defaultRepeatInterval">Repeat Reminder</label>
-              <p class="input-hint">After the first reminder, repeat every...</p>
-              <select id="defaultRepeatInterval" bind:value={defaultRepeatIntervalHours} class="settings-select">
+              <p class="input-hint">
+                After the first reminder, repeat every...
+              </p>
+              <select
+                id="defaultRepeatInterval"
+                bind:value={defaultRepeatIntervalHours}
+                class="settings-select"
+              >
                 {#each repeatOptions as option}
                   <option value={option.value}>{option.label}</option>
                 {/each}
               </select>
             </div>
           </div>
-          
+
           <div class="notification-toggles">
             <div class="accessibility-option">
               <div class="option-info">
-                <label for="emailReminders" class="option-label">Email Reminders</label>
-                <p class="option-description">Receive deadline reminders via email.</p>
+                <label for="emailReminders" class="option-label"
+                  >Email Reminders</label
+                >
+                <p class="option-description">
+                  Receive deadline reminders via email.
+                </p>
               </div>
               <label class="toggle-switch">
-                <input type="checkbox" id="emailReminders" bind:checked={emailReminders} />
+                <input
+                  type="checkbox"
+                  id="emailReminders"
+                  bind:checked={emailReminders}
+                />
                 <span class="toggle-slider"></span>
               </label>
             </div>
           </div>
-          
-          <button class="button button-primary" on:click={saveNotificationSettings} disabled={isLoadingNotificationSettings}>
-            {#if isLoadingNotificationSettings}Saving...{:else}Save Notification Settings{/if}
+
+          <button
+            class="button button-primary"
+            on:click={saveNotificationSettings}
+            disabled={isLoadingNotificationSettings}
+          >
+            {#if isLoadingNotificationSettings}Saving...{:else}Save Notification
+              Settings{/if}
           </button>
-          
+
           {#if notificationMessage}
-            <p class="message {notificationMessageType}">{notificationMessage}</p>
+            <p class="message {notificationMessageType}">
+              {notificationMessage}
+            </p>
           {/if}
         </section>
 
         <section class="settings-section danger-zone">
           <h2>Account Deletion</h2>
           <p class="danger-text">
-            Permanently delete your account and all associated data. This action cannot be undone. 
-            Please be absolutely sure before proceeding.
+            Permanently delete your account and all associated data. This action
+            cannot be undone. Please be absolutely sure before proceeding.
           </p>
-          <button class="button button-danger" on:click={handleDeleteUserAccount} disabled={isLoadingDelete}>
-             {#if isLoadingDelete}Deleting...{:else}Delete My Account{/if}
+          <button
+            class="button button-danger"
+            on:click={handleDeleteUserAccount}
+            disabled={isLoadingDelete}
+          >
+            {#if isLoadingDelete}Deleting...{:else}Delete My Account{/if}
           </button>
           {#if deleteAccountFormMessage}
-            <p class="message {deleteAccountFormMessageType}">{deleteAccountFormMessage}</p>
+            <p class="message {deleteAccountFormMessageType}">
+              {deleteAccountFormMessage}
+            </p>
           {/if}
         </section>
 
@@ -801,98 +1106,351 @@
 
 <!-- AI Assistant Panel -->
 <CalendarAIPanel
-    {isDarkMode}
-    tasks={[]}
-    bind:isOpen={isAIPanelOpen}
-    on:selectTask={(e) => {
-      // Navigate to tasks page with task ID to auto-open it
-      goto(`/tasks?taskId=${e.detail.taskId}`);
-    }}
+  {isDarkMode}
+  tasks={[]}
+  bind:isOpen={isAIPanelOpen}
+  on:selectTask={(e) => {
+    // Navigate to tasks page with task ID to auto-open it
+    goto(`/tasks?taskId=${e.detail.taskId}`);
+  }}
 />
 
 <!-- Styles (as provided in the previous combined message, including settings-specific styles and dark mode) -->
 <style>
   /* General App Styles (condensed for brevity - use your full style block) */
-  .font-sans {font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;}
-  :global(body, html) {height: 100%; margin: 0; padding: 0; overflow: hidden; }
+  .font-sans {
+    font-family:
+      "Inter",
+      -apple-system,
+      BlinkMacSystemFont,
+      "Segoe UI",
+      Roboto,
+      Helvetica,
+      Arial,
+      sans-serif;
+  }
+  :global(body, html) {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+  }
   /* ... Scrollbar Styles ... */
-  ::-webkit-scrollbar { width: 6px; height: 6px; }
-  ::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 3px; }
-  ::-webkit-scrollbar-thumb { background: #c5c5c5; border-radius: 3px; }
-  ::-webkit-scrollbar-thumb:hover { background: #a8a8a8; }
-  .custom-scrollbar { scrollbar-width: thin; scrollbar-color: #c5c5c5 #f1f1f1; }
-  :global(.dark) ::-webkit-scrollbar-track { background: #2d3748; }
-  :global(.dark) ::-webkit-scrollbar-thumb { background: #4a5568; }
-  :global(.dark) ::-webkit-scrollbar-thumb:hover { background: #718096; }
-  :global(.dark) .custom-scrollbar { scrollbar-color: #4a5568 #2d3748; }
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #c5c5c5;
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #a8a8a8;
+  }
+  .custom-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: #c5c5c5 #f1f1f1;
+  }
+  :global(.dark) ::-webkit-scrollbar-track {
+    background: #2d3748;
+  }
+  :global(.dark) ::-webkit-scrollbar-thumb {
+    background: #4a5568;
+  }
+  :global(.dark) ::-webkit-scrollbar-thumb:hover {
+    background: #718096;
+  }
+  :global(.dark) .custom-scrollbar {
+    scrollbar-color: #4a5568 #2d3748;
+  }
 
-
-  
   /* Settings Page Specific Styles */
-  .settings-page {max-width: 800px; margin: 2rem auto; padding: 1rem 2rem; flex-grow: 1; display: flex; flex-direction: column;}
-  .settings-page h1 {text-align: center; margin-bottom: 2rem; font-weight: 600; font-size: 2em;}
-  .settings-page h1 { color: #1f2937; }
-  :global(.dark) .settings-page h1 { color: #f3f4f6; }
-  .settings-section {padding: 1.5rem 2rem; margin-bottom: 2rem; border-radius: 8px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);}
-  .settings-section { background-color: #ffffff; border: 1px solid #e5e7eb; color: #1f2937; }
-  :global(.dark) .settings-section { background-color: #374151; border-color: #4b5563; color: #d1d5db;}
-  .settings-section h2 {font-size: 1.5em; margin-top: 0; margin-bottom: 1.5rem; padding-bottom: 0.75rem; font-weight: 500;}
-  .settings-section h2 { color: #111827; border-bottom: 1px solid #e5e7eb; }
-  :global(.dark) .settings-section h2 { color: #f3f4f6; border-bottom-color: #4b5563;}
-  .welcome-message {font-size: 1.1em; margin-bottom: 1.5rem; margin-top: -1rem;}
-  .welcome-message { color: #4b5563; }
-  :global(.dark) .welcome-message { color: #9ca3af; }
-  .profile-form-grid { display: grid; grid-template-columns: 1fr; gap: 1.5rem; margin-bottom: 1.5rem; }
-  .form-group { display: flex; flex-direction: column; }
-  .full-width-profile-field { grid-column: 1 / -1; }
-  .profile-picture-group { /* Stays as default in 1-col layout */ }
-  .profile-picture-controls { display: flex; flex-direction: column; align-items: flex-start; gap: 1rem; }
-  .profile-preview {width: 120px; height: 120px; border-radius: 50%; object-fit: cover; margin-bottom: 0.5rem; }
-  .profile-preview { border: 3px solid #e5e7eb; }
-  :global(.dark) .profile-preview { border-color: #4b5563; }
-  .upload-button { display: inline-block; cursor: pointer; }
-  .settings-section label { font-weight: 600; margin-bottom: 0.5rem; font-size: 0.95em; }
-  .settings-section label { color: #374151; }
-  :global(.dark) .settings-section label { color: #d1d5db; }
-  .settings-section input[type="text"] {width: 100%; padding: 0.75rem; border-radius: 6px; box-sizing: border-box; font-size: 1em; transition: border-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;}
-  .settings-section input[type="text"] {background-color: #fff; border: 1px solid #d1d5db; color: #1f2937;}
-  :global(.dark) .settings-section input[type="text"] {background-color: #2d3748; border-color: #4b5563; color: #f3f4f6;}
-  :global(.dark) .settings-section input::placeholder { color: #6b7280; }
-  .settings-section input[type="text"]:focus {outline: none;}
-  .settings-section input:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25); }
-  :global(.dark) .settings-section input:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.35); }
-  .settings-section .button {padding: 0.75rem 1.5rem; border: none; border-radius: 6px; font-size: 1em; font-weight: 500; cursor: pointer; transition: background-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out; text-decoration: none; display: inline-block; text-align: center;}
-  .settings-section .button:disabled { opacity: 0.6; cursor: not-allowed; }
-  .settings-section .button-primary { color: white; }
-  .settings-section .button-primary { background-color: #3b82f6; }
-  .settings-section .button-primary:hover:not(:disabled) { background-color: #2563eb; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-  :global(.dark) .settings-section .button-primary { background-color: #2563eb; }
-  :global(.dark) .settings-section .button-primary:hover:not(:disabled) { background-color: #1d4ed8; }
-  .settings-section .button-secondary { }
-  .settings-section .button-secondary { background-color: #e5e7eb; color: #1f2937; border: 1px solid #d1d5db; }
-  .settings-section .button-secondary:hover:not(:disabled) { background-color: #d1d5db; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
-  :global(.dark) .settings-section .button-secondary { background-color: #4b5563; color: #f3f4f6; border-color: #6b7280; }
-  :global(.dark) .settings-section .button-secondary:hover:not(:disabled) { background-color: #6b7280; }
-  .settings-section .button-danger { color: white; }
-  .settings-section .button-danger { background-color: #ef4444; }
-  .settings-section .button-danger:hover:not(:disabled) { background-color: #dc2626; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-  :global(.dark) .settings-section .button-danger { background-color: #dc2626; }
-  :global(.dark) .settings-section .button-danger:hover:not(:disabled) { background-color: #b91c1c; }
-  .message { margin-top: 1.25rem; padding: 0.75rem 1rem; border-radius: 6px; font-size: 0.9em; text-align: left; }
-  .message.success { background-color: #d1fae5; color: #065f46; border: 1px solid #a7f3d0; }
-  :global(.dark) .message.success { background-color: #064e3b; color: #a7f3d0; border-color: #34d399; }
-  .message.error { background-color: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
-  :global(.dark) .message.error { background-color: #7f1d1d; color: #fecaca; border-color: #ef4444; }
-  .danger-zone { border-left: 4px solid #ef4444;  }
-  :global(.dark) .danger-zone { border-left-color: #dc2626; }
-  .danger-zone h2 { color: #ef4444; }
-  :global(.dark) .danger-zone h2 { color: #f87171; }
-  .danger-text { font-size: 0.95em; line-height: 1.6; margin-bottom: 1.5rem; }
-  .danger-text { color: #7f1d1d;  }
-  :global(.dark) .danger-text { color: #fecaca;  }
-  .settings-footer {text-align: center; margin-top: auto; padding-top: 1.5rem; padding-bottom: 1rem; font-size: 0.9em;}
-  .settings-footer { border-top: 1px solid #e5e7eb; color: #6b7280;  }
-  :global(.dark) .settings-footer { border-top-color: #4b5563; color: #9ca3af; }
+  .settings-page {
+    max-width: 800px;
+    margin: 2rem auto;
+    padding: 1rem 2rem;
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+  }
+  .settings-page h1 {
+    text-align: center;
+    margin-bottom: 2rem;
+    font-weight: 600;
+    font-size: 2em;
+  }
+  .settings-page h1 {
+    color: #1f2937;
+  }
+  :global(.dark) .settings-page h1 {
+    color: #f3f4f6;
+  }
+  .settings-section {
+    padding: 1.5rem 2rem;
+    margin-bottom: 2rem;
+    border-radius: 8px;
+    box-shadow:
+      0 4px 6px -1px rgba(0, 0, 0, 0.1),
+      0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  }
+  .settings-section {
+    background-color: #ffffff;
+    border: 1px solid #e5e7eb;
+    color: #1f2937;
+  }
+  :global(.dark) .settings-section {
+    background-color: #374151;
+    border-color: #4b5563;
+    color: #d1d5db;
+  }
+  .settings-section h2 {
+    font-size: 1.5em;
+    margin-top: 0;
+    margin-bottom: 1.5rem;
+    padding-bottom: 0.75rem;
+    font-weight: 500;
+  }
+  .settings-section h2 {
+    color: #111827;
+    border-bottom: 1px solid #e5e7eb;
+  }
+  :global(.dark) .settings-section h2 {
+    color: #f3f4f6;
+    border-bottom-color: #4b5563;
+  }
+  .welcome-message {
+    font-size: 1.1em;
+    margin-bottom: 1.5rem;
+    margin-top: -1rem;
+  }
+  .welcome-message {
+    color: #4b5563;
+  }
+  :global(.dark) .welcome-message {
+    color: #9ca3af;
+  }
+  .profile-form-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+    margin-bottom: 1.5rem;
+  }
+  .form-group {
+    display: flex;
+    flex-direction: column;
+  }
+  .full-width-profile-field {
+    grid-column: 1 / -1;
+  }
+  .profile-picture-group {
+    /* Stays as default in 1-col layout */
+  }
+  .profile-picture-controls {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1rem;
+  }
+  .profile-preview {
+    width: 120px;
+    height: 120px;
+    border-radius: 50%;
+    object-fit: cover;
+    margin-bottom: 0.5rem;
+  }
+  .profile-preview {
+    border: 3px solid #e5e7eb;
+  }
+  :global(.dark) .profile-preview {
+    border-color: #4b5563;
+  }
+  .upload-button {
+    display: inline-block;
+    cursor: pointer;
+  }
+  .settings-section label {
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    font-size: 0.95em;
+  }
+  .settings-section label {
+    color: #374151;
+  }
+  :global(.dark) .settings-section label {
+    color: #d1d5db;
+  }
+  .settings-section input[type="text"] {
+    width: 100%;
+    padding: 0.75rem;
+    border-radius: 6px;
+    box-sizing: border-box;
+    font-size: 1em;
+    transition:
+      border-color 0.2s ease-in-out,
+      box-shadow 0.2s ease-in-out;
+  }
+  .settings-section input[type="text"] {
+    background-color: #fff;
+    border: 1px solid #d1d5db;
+    color: #1f2937;
+  }
+  :global(.dark) .settings-section input[type="text"] {
+    background-color: #2d3748;
+    border-color: #4b5563;
+    color: #f3f4f6;
+  }
+  :global(.dark) .settings-section input::placeholder {
+    color: #6b7280;
+  }
+  .settings-section input[type="text"]:focus {
+    outline: none;
+  }
+  .settings-section input:focus {
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25);
+  }
+  :global(.dark) .settings-section input:focus {
+    border-color: #2563eb;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.35);
+  }
+  .settings-section .button {
+    padding: 0.75rem 1.5rem;
+    border: none;
+    border-radius: 6px;
+    font-size: 1em;
+    font-weight: 500;
+    cursor: pointer;
+    transition:
+      background-color 0.2s ease-in-out,
+      box-shadow 0.2s ease-in-out;
+    text-decoration: none;
+    display: inline-block;
+    text-align: center;
+  }
+  .settings-section .button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+  .settings-section .button-primary {
+    color: white;
+  }
+  .settings-section .button-primary {
+    background-color: #3b82f6;
+  }
+  .settings-section .button-primary:hover:not(:disabled) {
+    background-color: #2563eb;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  }
+  :global(.dark) .settings-section .button-primary {
+    background-color: #2563eb;
+  }
+  :global(.dark) .settings-section .button-primary:hover:not(:disabled) {
+    background-color: #1d4ed8;
+  }
+  .settings-section .button-secondary {
+  }
+  .settings-section .button-secondary {
+    background-color: #e5e7eb;
+    color: #1f2937;
+    border: 1px solid #d1d5db;
+  }
+  .settings-section .button-secondary:hover:not(:disabled) {
+    background-color: #d1d5db;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  }
+  :global(.dark) .settings-section .button-secondary {
+    background-color: #4b5563;
+    color: #f3f4f6;
+    border-color: #6b7280;
+  }
+  :global(.dark) .settings-section .button-secondary:hover:not(:disabled) {
+    background-color: #6b7280;
+  }
+  .settings-section .button-danger {
+    color: white;
+  }
+  .settings-section .button-danger {
+    background-color: #ef4444;
+  }
+  .settings-section .button-danger:hover:not(:disabled) {
+    background-color: #dc2626;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  }
+  :global(.dark) .settings-section .button-danger {
+    background-color: #dc2626;
+  }
+  :global(.dark) .settings-section .button-danger:hover:not(:disabled) {
+    background-color: #b91c1c;
+  }
+  .message {
+    margin-top: 1.25rem;
+    padding: 0.75rem 1rem;
+    border-radius: 6px;
+    font-size: 0.9em;
+    text-align: left;
+  }
+  .message.success {
+    background-color: #d1fae5;
+    color: #065f46;
+    border: 1px solid #a7f3d0;
+  }
+  :global(.dark) .message.success {
+    background-color: #064e3b;
+    color: #a7f3d0;
+    border-color: #34d399;
+  }
+  .message.error {
+    background-color: #fee2e2;
+    color: #991b1b;
+    border: 1px solid #fecaca;
+  }
+  :global(.dark) .message.error {
+    background-color: #7f1d1d;
+    color: #fecaca;
+    border-color: #ef4444;
+  }
+  .danger-zone {
+    border-left: 4px solid #ef4444;
+  }
+  :global(.dark) .danger-zone {
+    border-left-color: #dc2626;
+  }
+  .danger-zone h2 {
+    color: #ef4444;
+  }
+  :global(.dark) .danger-zone h2 {
+    color: #f87171;
+  }
+  .danger-text {
+    font-size: 0.95em;
+    line-height: 1.6;
+    margin-bottom: 1.5rem;
+  }
+  .danger-text {
+    color: #7f1d1d;
+  }
+  :global(.dark) .danger-text {
+    color: #fecaca;
+  }
+  .settings-footer {
+    text-align: center;
+    margin-top: auto;
+    padding-top: 1.5rem;
+    padding-bottom: 1rem;
+    font-size: 0.9em;
+  }
+  .settings-footer {
+    border-top: 1px solid #e5e7eb;
+    color: #6b7280;
+  }
+  :global(.dark) .settings-footer {
+    border-top-color: #4b5563;
+    color: #9ca3af;
+  }
   /* Accessibility Settings Styles */
   .section-description {
     font-size: 0.95em;
@@ -900,7 +1458,9 @@
     margin-bottom: 1.5rem;
     color: #6b7280;
   }
-  :global(.dark) .section-description { color: #9ca3af; }
+  :global(.dark) .section-description {
+    color: #9ca3af;
+  }
 
   .accessibility-options {
     display: flex;
@@ -935,7 +1495,9 @@
     margin-bottom: 0.25rem;
     color: #1f2937;
   }
-  :global(.dark) .option-label { color: #f3f4f6; }
+  :global(.dark) .option-label {
+    color: #f3f4f6;
+  }
 
   .option-description {
     font-size: 0.875em;
@@ -943,7 +1505,9 @@
     line-height: 1.4;
     margin: 0;
   }
-  :global(.dark) .option-description { color: #9ca3af; }
+  :global(.dark) .option-description {
+    color: #9ca3af;
+  }
 
   /* Toggle Switch Styles */
   .toggle-switch {
@@ -1027,24 +1591,42 @@
   }
 
   @media (max-width: 768px) {
-    .settings-page { padding: 1rem; margin-top: 1rem; margin-bottom: 1rem; }
-    .settings-section { padding: 1rem 1.5rem; }
-    .profile-form-grid { grid-template-columns: 1fr; } /* Already 1-col, but good to keep */
-    .profile-picture-controls { flex-direction: column; align-items: flex-start; } /* Stack image and button on small screens */
-    .profile-preview { width: 100px; height: 100px; margin-bottom: 0.5rem; } /* Adjust preview for mobile */
-    .settings-section .button { width: auto; display: inline-block; }
-    
+    .settings-page {
+      padding: 1rem;
+      margin-top: 1rem;
+      margin-bottom: 1rem;
+    }
+    .settings-section {
+      padding: 1rem 1.5rem;
+    }
+    .profile-form-grid {
+      grid-template-columns: 1fr;
+    } /* Already 1-col, but good to keep */
+    .profile-picture-controls {
+      flex-direction: column;
+      align-items: flex-start;
+    } /* Stack image and button on small screens */
+    .profile-preview {
+      width: 100px;
+      height: 100px;
+      margin-bottom: 0.5rem;
+    } /* Adjust preview for mobile */
+    .settings-section .button {
+      width: auto;
+      display: inline-block;
+    }
+
     .accessibility-option {
       flex-direction: column;
       align-items: flex-start;
       gap: 1rem;
     }
-    
+
     .option-info {
       margin-right: 0;
     }
   }
-  
+
   /* Notification Settings Styles */
   .notification-settings-grid {
     display: grid;
@@ -1052,17 +1634,17 @@
     gap: 1.5rem;
     margin-bottom: 1.5rem;
   }
-  
+
   @media (max-width: 640px) {
     .notification-settings-grid {
       grid-template-columns: 1fr;
     }
   }
-  
+
   .notification-toggles {
     margin-bottom: 1.5rem;
   }
-  
+
   .settings-select {
     width: 100%;
     padding: 0.75rem 1rem;
@@ -1072,38 +1654,40 @@
     font-size: 0.95rem;
     color: #374151;
     cursor: pointer;
-    transition: border-color 0.2s, box-shadow 0.2s;
+    transition:
+      border-color 0.2s,
+      box-shadow 0.2s;
   }
-  
+
   :global(.dark) .settings-select {
     background-color: #374151;
     border-color: #4b5563;
     color: #e5e7eb;
   }
-  
+
   .settings-select:focus {
     outline: none;
     border-color: #3b82f6;
     box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25);
   }
-  
+
   .input-hint {
     font-size: 0.8rem;
     color: #6b7280;
     margin-top: 0.25rem;
     margin-bottom: 0.5rem;
   }
-  
+
   :global(.dark) .input-hint {
     color: #9ca3af;
   }
-  
+
   .section-description {
     color: #6b7280;
     margin-bottom: 1.5rem;
     font-size: 0.95rem;
   }
-  
+
   :global(.dark) .section-description {
     color: #9ca3af;
   }

@@ -231,10 +231,10 @@
                     <div class="form-group">
                         <label for="editPriority">Priority</label>
                         <select id="editPriority" name="priority" bind:value={editPriority}>
+                            <option value="urgent">Urgent</option>
+                            <option value="high">High</option>
                             <option value="standard">Standard</option>
                             <option value="low">Low</option>
-                            <option value="medium">Medium</option>
-                            <option value="high">High</option>
                         </select>
                     </div>
                     <div class="modal-actions">
@@ -335,53 +335,77 @@
 		left: 0;
 		width: 100%;
 		height: 100%;
-		background-color: rgba(0, 0, 0, 0.6);
+		background-color: rgba(0, 0, 0, 0.5);
+		backdrop-filter: blur(4px);
+		-webkit-backdrop-filter: blur(4px);
 		display: flex;
 		justify-content: center;
 		align-items: center;
 		z-index: 1050;
 	}
 	.modal-content {
-		background-color: var(--surface-light, #fff);
-		padding: 2rem;
-		border-radius: 8px;
-		box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+		background: rgba(255, 255, 255, 0.95);
+		backdrop-filter: blur(12px);
+		-webkit-backdrop-filter: blur(12px);
+		padding: 2rem 2.5rem;
+		border-radius: 16px;
+		box-shadow: 0 20px 50px rgba(0, 0, 0, 0.15), 0 10px 20px rgba(0, 0, 0, 0.1);
+		border: 1px solid rgba(255, 255, 255, 0.3);
 		width: 90%;
-		max-width: 600px;
+		max-width: 560px;
 		max-height: 90vh;
 		overflow-y: auto;
 		position: relative;
 	}
 	:global(body.dark) .modal-content {
-		background-color: var(--surface-dark, #1f2937);
+		background: rgba(39, 39, 42, 0.95);
+		border-color: rgba(63, 63, 70, 0.5);
+		box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4), 0 10px 20px rgba(0, 0, 0, 0.3);
 		color: var(--text-dark-primary);
 	}
 	.modal-close-button {
 		position: absolute;
-		top: 10px;
-		right: 15px;
-		background: none;
+		top: 16px;
+		right: 16px;
+		background: rgba(0, 0, 0, 0.05);
 		border: none;
-		font-size: 1.8rem;
+		font-size: 1.5rem;
+		width: 36px;
+		height: 36px;
+		border-radius: 10px;
 		cursor: pointer;
 		color: var(--text-light-secondary);
 		line-height: 1;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		transition: all 0.15s ease;
+	}
+	.modal-close-button:hover {
+		background: rgba(0, 0, 0, 0.1);
+		color: var(--text-light-primary);
 	}
 	:global(body.dark) .modal-close-button {
+		background: rgba(255, 255, 255, 0.05);
 		color: var(--text-dark-secondary);
+	}
+	:global(body.dark) .modal-close-button:hover {
+		background: rgba(255, 255, 255, 0.1);
+		color: var(--text-dark-primary);
 	}
 
 	h2 {
 		margin-top: 0;
 		margin-bottom: 1.5rem;
-		font-size: 1.5rem;
+		font-size: 1.35rem;
+		font-weight: 700;
 		color: var(--text-light-primary);
-		border-bottom: 1px solid var(--border-light);
-		padding-bottom: 0.75rem;
+		border-bottom: none;
+		padding-bottom: 0;
+		padding-right: 40px;
 	}
 	:global(body.dark) h2 {
 		color: var(--text-dark-primary);
-		border-bottom-color: var(--border-dark);
 	}
 
 	.task-details-grid {
@@ -409,10 +433,12 @@
     :global(body.dark) .status-complete { background-color: #065f46; color: #d1fae5; }
     :global(body.dark) .status-incomplete { background-color: #991b1b; color: #fee2e2; }
     :global(body.dark) .status-late { background-color: #9a3412; color: #ffedd5; }
+    .priority-text-urgent { background-color: #fef2f2; color: #dc2626; font-weight: 600; }
     .priority-text-high { background-color: #fee2e2; color: var(--priority-high-light, #ef4444); }
     .priority-text-medium { background-color: #fffbeb; color: var(--priority-medium-light, #f59e0b); }
     .priority-text-low { background-color: #f0fdf4; color: var(--priority-low-light, #22c55e); }
     .priority-text-standard { background-color: #eff6ff; color: var(--priority-standard-light, #6b7280); }
+    :global(body.dark) .priority-text-urgent { background-color: #450a0a; color: #ef4444; }
     :global(body.dark) .priority-text-high { background-color: #3f2222; color: var(--priority-high-dark, #f87171); }
     :global(body.dark) .priority-text-medium { background-color: #422e14; color: var(--priority-medium-dark, #fbbf24); }
     :global(body.dark) .priority-text-low { background-color: #153220; color: var(--priority-low-dark, #4ade80); }

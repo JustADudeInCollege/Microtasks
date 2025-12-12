@@ -1,7 +1,7 @@
-// src/lib/server/firebaseAdmin.js - Using Environment Variable
+// src/lib/server/firebaseAdmin.ts - Using Environment Variable
 
 import admin from "firebase-admin";
-import { getApps } from "firebase-admin/app";
+import { getApps, type ServiceAccount } from "firebase-admin/app";
 
 // --- Load Service Account Key from Environment Variable ---
 const serviceAccountJson = process.env.FIREBASE_ADMIN_SDK_JSON;
@@ -15,10 +15,10 @@ if (!serviceAccountJson) {
     throw new Error("Firebase Admin SDK configuration is missing.");
 }
 
-let serviceAccount;
+let serviceAccount: ServiceAccount;
 try {
     // Parse the JSON string from the environment variable
-    serviceAccount = JSON.parse(serviceAccountJson);
+    serviceAccount = JSON.parse(serviceAccountJson) as ServiceAccount;
 } catch (e) {
     console.error("!!! Failed to parse FIREBASE_ADMIN_SDK_JSON environment variable content !!!", e);
     console.error("Verify the JSON content in your .env file or environment variable configuration.");
@@ -29,20 +29,20 @@ try {
 
 // Initialize Firebase Admin SDK only if it hasn't been initialized yet
 if (!getApps().length) {
-  try {
-      admin.initializeApp({
-          // Use the parsed service account object
-          credential: admin.credential.cert(serviceAccount),
-          // Optional: Add databaseURL or storageBucket if needed for other services
-          // databaseURL: `https://${serviceAccount.project_id}.firebaseio.com`,
-          // storageBucket: `${serviceAccount.project_id}.appspot.com`,
-      });
-      console.log('[Firebase Admin] SDK Initialized successfully (using environment variable).');
-  } catch(e) {
-      console.error("!!! Firebase Admin SDK Initialization Failed !!!", e);
-      // Throw error to potentially stop the server if Firebase Admin is critical
-      throw new Error("Firebase Admin SDK could not be initialized.");
-  }
+    try {
+        admin.initializeApp({
+            // Use the parsed service account object
+            credential: admin.credential.cert(serviceAccount),
+            // Optional: Add databaseURL or storageBucket if needed for other services
+            // databaseURL: `https://${serviceAccount.project_id}.firebaseio.com`,
+            // storageBucket: `${serviceAccount.project_id}.appspot.com`,
+        });
+        console.log('[Firebase Admin] SDK Initialized successfully (using environment variable).');
+    } catch (e) {
+        console.error("!!! Firebase Admin SDK Initialization Failed !!!", e);
+        // Throw error to potentially stop the server if Firebase Admin is critical
+        throw new Error("Firebase Admin SDK could not be initialized.");
+    }
 } else {
     console.log('[Firebase Admin] SDK already initialized.');
 }

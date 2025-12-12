@@ -82,16 +82,29 @@ export const GET: RequestHandler = async ({ url }) => {
 
       // Get user's reminder preferences
       const defaultReminderHours: number = notificationSettings.defaultReminderHours ?? 24;
-      const repeatIntervalHours: number = notificationSettings.defaultRepeatIntervalHours ?? 6; // Default to 6 hours
+      const repeatIntervalHours: number | null = notificationSettings.defaultRepeatIntervalHours ?? null;
       const userName = userData.username || 'User';
+
+      console.log(`[API /send-reminders] User ${userName}: First reminder ${defaultReminderHours}h, Repeat interval: ${repeatIntervalHours === null || repeatIntervalHours === 0 ? 'NO REPEAT' : repeatIntervalHours + 'h'}`);
 
       // Check if enough time has passed since the last email (respect repeat interval)
       const lastEmailSentAt = userData.lastDailySummarySentAt?.toDate?.() ?? null;
-      if (lastEmailSentAt) {
-        const hoursSinceLastEmail = (now.getTime() - lastEmailSentAt.getTime()) / (1000 * 60 * 60);
-        if (hoursSinceLastEmail < repeatIntervalHours) {
-          console.log(`[API /send-reminders] Skipping ${userName}: Last email was ${hoursSinceLastEmail.toFixed(1)}h ago, interval is ${repeatIntervalHours}h`);
+
+      // Handle "no repeat" setting (value 0 or null) - only send ONE notification ever
+      if (repeatIntervalHours === 0 || repeatIntervalHours === null) {
+        if (lastEmailSentAt) {
+          console.log(`[API /send-reminders] Skipping ${userName}: No-repeat enabled and already notified on ${lastEmailSentAt.toISOString()}`);
           continue;
+        }
+        // First notification - will proceed below
+      } else {
+        // Normal repeat interval checking
+        if (lastEmailSentAt) {
+          const hoursSinceLastEmail = (now.getTime() - lastEmailSentAt.getTime()) / (1000 * 60 * 60);
+          if (hoursSinceLastEmail < repeatIntervalHours) {
+            console.log(`[API /send-reminders] Skipping ${userName}: Last email was ${hoursSinceLastEmail.toFixed(1)}h ago, interval is ${repeatIntervalHours}h`);
+            continue;
+          }
         }
       }
 

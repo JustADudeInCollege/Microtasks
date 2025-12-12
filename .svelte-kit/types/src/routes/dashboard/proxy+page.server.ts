@@ -23,6 +23,19 @@ interface FetchedTaskData {
 }
 
 // Interface for the data structure sent to the frontend for the dashboard
+// Interface for task data sent to the frontend
+interface TaskForFrontend {
+    id: string;
+    title: string;
+    description?: string;
+    status: 'pending' | 'completed';
+    priority: string;
+    dueDateISO: string | null;
+    dueTime?: string | null;
+    createdAtISO: string;
+    completedAtISO?: string | null;
+}
+
 export interface DashboardStats {
     tasksDoneThisMonth: number;
     tasksDoneThisWeek: number;
@@ -40,6 +53,8 @@ export interface DashboardStats {
     currentStreak: number; // consecutive days with completed tasks
     completionRate: number; // percentage of completed vs total
     avgTasksPerDay: number; // average tasks completed per day this week
+    // Tasks array for AI panel
+    tasks: TaskForFrontend[];
 }
 
 interface UserForFrontend {
@@ -154,6 +169,7 @@ export const load = async ({ locals }: Parameters<PageServerLoad>[0]) => {
         currentStreak: 0,
         completionRate: 0,
         avgTasksPerDay: 0,
+        tasks: [],
     };
 
     if (!pageLoadError) {
@@ -179,6 +195,19 @@ export const load = async ({ locals }: Parameters<PageServerLoad>[0]) => {
             tasksSnapshot.docs.forEach(doc => {
                 const task = doc.data() as FetchedTaskData;
                 dashboardStats.totalTasks++;
+
+                // Add task to the tasks array for AI panel
+                dashboardStats.tasks.push({
+                    id: doc.id,
+                    title: task.title,
+                    description: task.description,
+                    status: task.isCompleted ? 'completed' : 'pending',
+                    priority: task.priority || 'standard',
+                    dueDateISO: task.dueDate || null,
+                    dueTime: task.dueTime || null,
+                    createdAtISO: task.createdAt?.toDate().toISOString() || new Date().toISOString(),
+                    completedAtISO: task.completedAt?.toDate().toISOString() || null,
+                });
 
                 const priority = task.priority?.toLowerCase() || 'unprioritized';
                 if (dashboardStats.priorityCounts.hasOwnProperty(priority)) {

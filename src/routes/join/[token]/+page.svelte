@@ -40,7 +40,7 @@
 </script>
 
 <svelte:head>
-    <title>Join Workspace - Microtask</title>
+    <title>Microtask</title>
 </svelte:head>
 
 <div class="join-page">

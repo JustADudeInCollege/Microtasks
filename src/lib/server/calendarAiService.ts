@@ -56,7 +56,7 @@ export interface ConflictResult {
     conflicts: Array<{
         taskIds: string[];
         taskTitles: string[];
-        conflictType: 'same-time' | 'overlapping' | 'too-many-deadlines';
+        conflictType: 'same-time' | 'overlapping' | 'too-many-deadlines' | 'overdue';
         description: string;
         suggestion: string;
     }>;
@@ -499,8 +499,19 @@ export async function detectConflicts(tasks: CalendarTask[]): Promise<ConflictRe
         byDate[task.dueDateISO!].push(task);
     });
 
+    // Define today's date for comparisons
+    const today = new Date();
+    const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+
     Object.entries(byDate).forEach(([date, dateTasks]) => {
-        if (dateTasks.length >= 5) {
+        // Parse the date to compare with today
+        const [year, month, day] = date.split('-').map(Number);
+        const taskDate = new Date(year, month - 1, day);
+        const isPastDate = taskDate < todayStart;
+
+        // Only show "too many deadlines" for today or future dates
+        // Past dates will be handled by overdue detection
+        if (dateTasks.length >= 5 && !isPastDate) {
             conflicts.push({
                 taskIds: dateTasks.map(t => t.id),
                 taskTitles: dateTasks.map(t => t.title),
@@ -510,6 +521,35 @@ export async function detectConflicts(tasks: CalendarTask[]): Promise<ConflictRe
             });
         }
     });
+
+    // Check for overdue tasks
+
+    const overdueTasks = pendingTasks.filter(task => {
+        if (!task.dueDateISO) return false;
+        const [year, month, day] = task.dueDateISO.split('-').map(Number);
+        const dueDate = new Date(year, month - 1, day);
+        return dueDate < todayStart;
+    });
+
+    if (overdueTasks.length > 0) {
+        // Group overdue tasks by how many days overdue
+        const daysOverdue = (task: CalendarTask) => {
+            const [year, month, day] = task.dueDateISO!.split('-').map(Number);
+            const dueDate = new Date(year, month - 1, day);
+            return Math.floor((todayStart.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24));
+        };
+
+        const sorted = [...overdueTasks].sort((a, b) => daysOverdue(b) - daysOverdue(a));
+        const mostOverdue = daysOverdue(sorted[0]);
+
+        conflicts.push({
+            taskIds: overdueTasks.map(t => t.id),
+            taskTitles: overdueTasks.map(t => t.title),
+            conflictType: 'overdue',
+            description: `⚠️ ${overdueTasks.length} overdue task${overdueTasks.length > 1 ? 's' : ''} (up to ${mostOverdue} day${mostOverdue > 1 ? 's' : ''} late)`,
+            suggestion: 'These tasks have passed their due date. Consider completing them immediately, rescheduling to realistic dates, or breaking them into smaller steps.'
+        });
+    }
 
     return {
         hasConflicts: conflicts.length > 0,
@@ -633,6 +673,328 @@ Respond with JSON only:
         return null;
     } catch (error) {
         console.error('[CalendarAI] Error suggesting categories:', error);
+        return null;
+    }
+}
+
+/**
+ * Predict which tasks are at risk of becoming overdue
+ */
+export interface OverdueRiskResult {
+    atRiskTasks: Array<{
+        taskId: string;
+        taskTitle: string;
+        dueDate: string;
+        riskLevel: 'low' | 'medium' | 'high' | 'critical';
+        riskScore: number; // 0-100
+        reason: string;
+        suggestion: string;
+    }>;
+    summary: string;
+    overallRisk: 'low' | 'medium' | 'high';
+}
+
+export async function predictOverdueRisk(
+    tasks: CalendarTask[]
+): Promise<OverdueRiskResult | null> {
+    const pendingTasks = tasks.filter(t => !t.isCompleted && t.dueDateISO).slice(0, 15);
+
+    if (pendingTasks.length === 0) {
+        return {
+            atRiskTasks: [],
+            summary: 'No pending tasks with due dates to analyze.',
+            overallRisk: 'low'
+        };
+    }
+
+    const today = new Date();
+    const todayStr = today.toISOString().split('T')[0];
+
+    // Build task list with context
+    const tasksList = pendingTasks.map((t, i) => {
+        const daysUntilDue = t.dueDateISO
+            ? Math.ceil((new Date(t.dueDateISO).getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+            : 0;
+        const isOverdue = daysUntilDue < 0;
+
+        return `${i + 1}. "${t.title}" | Due: ${t.dueDateISO} (${isOverdue ? `${Math.abs(daysUntilDue)} days overdue` : `${daysUntilDue} days left`}) | Priority: ${t.priority || 'standard'}`;
+    }).join('\n');
+
+    const prompt = `Analyze these pending tasks and predict which are at risk of becoming overdue. Consider:
+- Time until deadline
+- Task complexity (inferred from title/description)
+- Priority level
+- Number of concurrent tasks
+
+Today's date: ${todayStr}
+
+Tasks:
+${tasksList}
+
+For each task, assess the overdue risk. Respond with JSON only:
+{
+    "atRiskTasks": [
+        {
+            "taskId": "task-id-here",
+            "taskTitle": "task title",
+            "dueDate": "YYYY-MM-DD",
+            "riskLevel": "low|medium|high|critical",
+            "riskScore": 0-100,
+            "reason": "Why this task is at risk",
+            "suggestion": "What to do about it"
+        }
+    ],
+    "summary": "Brief overview of the risk situation",
+    "overallRisk": "low|medium|high"
+}
+
+Focus on tasks that are truly at risk (medium, high, critical). Don't list low-risk tasks unless there's something notable.`;
+
+    const messages: ChatMessageForAPI[] = [
+        { role: 'system', content: 'You are a productivity analyst. Predict task overdue risks based on deadlines and context. Respond only with valid JSON.' },
+        { role: 'user', content: prompt }
+    ];
+
+    try {
+        const response = await getChatCompletion(messages, false);
+        if (!response) return null;
+
+        const jsonMatch = response.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+            const result = JSON.parse(jsonMatch[0]) as OverdueRiskResult;
+
+            // Ensure taskIds match actual tasks
+            result.atRiskTasks = result.atRiskTasks.map(risk => {
+                const matchedTask = pendingTasks.find(t =>
+                    t.title.toLowerCase().includes(risk.taskTitle.toLowerCase().substring(0, 20)) ||
+                    risk.taskTitle.toLowerCase().includes(t.title.toLowerCase().substring(0, 20))
+                );
+                if (matchedTask) {
+                    risk.taskId = matchedTask.id;
+                }
+                return risk;
+            });
+
+            return result;
+        }
+        return null;
+    } catch (error) {
+        console.error('[CalendarAI] Error predicting overdue risk:', error);
+        return null;
+    }
+}
+
+/**
+ * Suggest smart reminders based on task patterns and deadlines
+ */
+export interface SmartReminderResult {
+    reminders: Array<{
+        taskId: string;
+        taskTitle: string;
+        dueDate: string;
+        suggestedReminderTime: string; // e.g., "2 hours before", "1 day before", "Tomorrow at 9am"
+        reminderReason: string;
+        urgency: 'low' | 'medium' | 'high';
+    }>;
+    summary: string;
+    productivityTip: string;
+}
+
+export async function suggestSmartReminders(
+    tasks: CalendarTask[]
+): Promise<SmartReminderResult | null> {
+    const pendingTasks = tasks.filter(t => !t.isCompleted && t.dueDateISO).slice(0, 12);
+
+    if (pendingTasks.length === 0) {
+        return {
+            reminders: [],
+            summary: 'No pending tasks to set reminders for.',
+            productivityTip: 'Great job staying on top of things!'
+        };
+    }
+
+    const today = new Date();
+    const todayStr = today.toISOString().split('T')[0];
+    const currentHour = today.getHours();
+
+    // Build task context
+    const tasksList = pendingTasks.map((t, i) => {
+        const daysUntilDue = t.dueDateISO
+            ? Math.ceil((new Date(t.dueDateISO).getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+            : 0;
+
+        return `${i + 1}. "${t.title}" | Due: ${t.dueDateISO}${t.dueTime ? ` at ${t.dueTime}` : ''} | (${daysUntilDue} days left) | Priority: ${t.priority || 'standard'}`;
+    }).join('\n');
+
+    const prompt = `You are a productivity assistant. Suggest optimal reminder times for these tasks.
+
+Current date/time: ${todayStr}, ${currentHour}:00
+User's tasks:
+${tasksList}
+
+For each task, suggest when to set a reminder based on:
+- Task urgency and deadline proximity
+- Best times for focus (morning for important work, afternoon for routine)
+- Give buffer time before deadlines
+- Consider task complexity (inferred from title)
+
+Respond with JSON only:
+{
+    "reminders": [
+        {
+            "taskId": "will-be-matched",
+            "taskTitle": "task title",
+            "dueDate": "YYYY-MM-DD",
+            "suggestedReminderTime": "e.g., Tomorrow at 9am, In 2 hours, 1 day before deadline",
+            "reminderReason": "Brief explanation",
+            "urgency": "low|medium|high"
+        }
+    ],
+    "summary": "Overall recommendation summary",
+    "productivityTip": "One actionable productivity tip based on their task list"
+}`;
+
+    const messages: ChatMessageForAPI[] = [
+        { role: 'system', content: 'You are a productivity coach. Suggest smart reminder times. Respond only with valid JSON.' },
+        { role: 'user', content: prompt }
+    ];
+
+    try {
+        const response = await getChatCompletion(messages, false);
+        if (!response) return null;
+
+        const jsonMatch = response.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+            const result = JSON.parse(jsonMatch[0]) as SmartReminderResult;
+
+            // Match taskIds to actual tasks
+            result.reminders = result.reminders.map(reminder => {
+                const matchedTask = pendingTasks.find(t =>
+                    t.title.toLowerCase().includes(reminder.taskTitle.toLowerCase().substring(0, 20)) ||
+                    reminder.taskTitle.toLowerCase().includes(t.title.toLowerCase().substring(0, 20))
+                );
+                if (matchedTask) {
+                    reminder.taskId = matchedTask.id;
+                }
+                return reminder;
+            });
+
+            return result;
+        }
+        return null;
+    } catch (error) {
+        console.error('[CalendarAI] Error suggesting smart reminders:', error);
+        return null;
+    }
+}
+
+/**
+ * Analyze progress and provide productivity insights
+ */
+export interface ProgressInsightsResult {
+    stats: {
+        totalTasks: number;
+        completedTasks: number;
+        pendingTasks: number;
+        overdueTasks: number;
+        completionRate: number; // percentage
+    };
+    insights: Array<{
+        type: 'achievement' | 'warning' | 'tip' | 'pattern';
+        icon: string;
+        title: string;
+        description: string;
+    }>;
+    weeklyTrend: 'improving' | 'stable' | 'declining';
+    motivationalMessage: string;
+    topPriorityAction: string;
+}
+
+export async function analyzeProgressInsights(
+    tasks: CalendarTask[]
+): Promise<ProgressInsightsResult | null> {
+    const today = new Date();
+    const todayStr = today.toISOString().split('T')[0];
+
+    // Calculate stats
+    const totalTasks = tasks.length;
+    const completedTasks = tasks.filter(t => t.isCompleted).length;
+    const pendingTasks = tasks.filter(t => !t.isCompleted).length;
+    const overdueTasks = tasks.filter(t =>
+        !t.isCompleted && t.dueDateISO && new Date(t.dueDateISO) < today
+    ).length;
+    const completionRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+
+    // Build context for AI analysis
+    const taskSummary = `
+Total tasks: ${totalTasks}
+Completed: ${completedTasks} (${completionRate}%)
+Pending: ${pendingTasks}
+Overdue: ${overdueTasks}
+
+Recent tasks:
+${tasks.slice(0, 10).map((t, i) =>
+        `${i + 1}. "${t.title}" - ${t.isCompleted ? '✅ Complete' : t.dueDateISO && new Date(t.dueDateISO) < today ? '⚠️ Overdue' : '⏳ Pending'} | Due: ${t.dueDateISO || 'No date'} | Priority: ${t.priority || 'standard'}`
+    ).join('\n')}`;
+
+    const prompt = `Analyze this user's task progress and provide personalized productivity insights.
+
+Today's date: ${todayStr}
+${taskSummary}
+
+Provide insights based on their patterns. Respond with JSON only:
+{
+    "insights": [
+        {
+            "type": "achievement|warning|tip|pattern",
+            "icon": "emoji for this insight",
+            "title": "Short title",
+            "description": "Detailed insight (1-2 sentences)"
+        }
+    ],
+    "weeklyTrend": "improving|stable|declining",
+    "motivationalMessage": "Personalized encouraging message based on their progress",
+    "topPriorityAction": "The single most important thing they should do next"
+}
+
+Include 3-5 insights covering:
+- Achievements (if completion rate is good)
+- Warnings (if there are overdue tasks or declining patterns)
+- Tips (actionable productivity advice)
+- Patterns (observed habits, peak productivity times if inferable)
+
+IMPORTANT: Keep suggestions simple and immediately actionable. Do NOT suggest complex productivity methodologies like Eisenhower Matrix, Pomodoro Technique, GTD, time-blocking frameworks, or similar laborious systems. Focus on quick, practical tips the user can apply right now.`;
+
+    const messages: ChatMessageForAPI[] = [
+        { role: 'system', content: 'You are an encouraging productivity coach. Analyze task patterns and provide helpful, personalized insights. Be positive but honest. Keep advice simple and quick to implement - avoid suggesting complex methodologies. Respond only with valid JSON.' },
+        { role: 'user', content: prompt }
+    ];
+
+    try {
+        const response = await getChatCompletion(messages, false);
+        if (!response) return null;
+
+        const jsonMatch = response.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+            const aiResult = JSON.parse(jsonMatch[0]);
+
+            return {
+                stats: {
+                    totalTasks,
+                    completedTasks,
+                    pendingTasks,
+                    overdueTasks,
+                    completionRate
+                },
+                insights: aiResult.insights || [],
+                weeklyTrend: aiResult.weeklyTrend || 'stable',
+                motivationalMessage: aiResult.motivationalMessage || 'Keep up the great work!',
+                topPriorityAction: aiResult.topPriorityAction || 'Focus on your highest priority task.'
+            };
+        }
+        return null;
+    } catch (error) {
+        console.error('[CalendarAI] Error analyzing progress insights:', error);
         return null;
     }
 }

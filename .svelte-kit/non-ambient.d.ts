@@ -27,7 +27,7 @@ export {};
 
 declare module "$app/types" {
 	export interface AppTypes {
-		RouteId(): "/" | "/api" | "/api/ai-task" | "/api/auth" | "/api/auth/session" | "/api/auth/timezone" | "/api/calendar-ai" | "/api/chats" | "/api/chat" | "/api/cron" | "/api/cron/send-reminders" | "/api/notifications" | "/api/pase-task-nlp" | "/api/tasks" | "/api/v1" | "/api/v1/chat" | "/api/workspace" | "/api/workspace/activity" | "/api/workspace/assignments" | "/api/workspace/invitations" | "/api/workspace/members" | "/api/workspace/share-link" | "/calendar" | "/dashboard" | "/forgotpass" | "/home" | "/join" | "/join/[token]" | "/kanban" | "/login" | "/settings" | "/signup" | "/tasks" | "/workspace" | "/workspace/[boardId]";
+		RouteId(): "/" | "/api" | "/api/ai-task" | "/api/auth" | "/api/auth/session" | "/api/auth/timezone" | "/api/calendar-ai" | "/api/chats" | "/api/chat" | "/api/cron" | "/api/cron/send-reminders" | "/api/notifications" | "/api/pase-task-nlp" | "/api/tasks" | "/api/tasks/update-priority" | "/api/v1" | "/api/v1/chat" | "/api/workspace" | "/api/workspace/activity" | "/api/workspace/assignments" | "/api/workspace/invitations" | "/api/workspace/members" | "/api/workspace/share-link" | "/calendar" | "/dashboard" | "/forgotpass" | "/home" | "/join" | "/join/[token]" | "/kanban" | "/login" | "/settings" | "/signup" | "/workspace" | "/workspace/[boardId]";
 		RouteParams(): {
 			"/join/[token]": { token: string };
 			"/workspace/[boardId]": { boardId: string }
@@ -47,6 +47,7 @@ declare module "$app/types" {
 			"/api/notifications": Record<string, never>;
 			"/api/pase-task-nlp": Record<string, never>;
 			"/api/tasks": Record<string, never>;
+			"/api/tasks/update-priority": Record<string, never>;
 			"/api/v1": Record<string, never>;
 			"/api/v1/chat": Record<string, never>;
 			"/api/workspace": Record<string, never>;
@@ -65,12 +66,11 @@ declare module "$app/types" {
 			"/login": Record<string, never>;
 			"/settings": Record<string, never>;
 			"/signup": Record<string, never>;
-			"/tasks": Record<string, never>;
 			"/workspace": { boardId?: string };
 			"/workspace/[boardId]": { boardId: string }
 		};
-		Pathname(): "/" | "/api" | "/api/" | "/api/ai-task" | "/api/ai-task/" | "/api/auth" | "/api/auth/" | "/api/auth/session" | "/api/auth/session/" | "/api/auth/timezone" | "/api/auth/timezone/" | "/api/calendar-ai" | "/api/calendar-ai/" | "/api/chats" | "/api/chats/" | "/api/chat" | "/api/chat/" | "/api/cron" | "/api/cron/" | "/api/cron/send-reminders" | "/api/cron/send-reminders/" | "/api/notifications" | "/api/notifications/" | "/api/pase-task-nlp" | "/api/pase-task-nlp/" | "/api/tasks" | "/api/tasks/" | "/api/v1" | "/api/v1/" | "/api/v1/chat" | "/api/v1/chat/" | "/api/workspace" | "/api/workspace/" | "/api/workspace/activity" | "/api/workspace/activity/" | "/api/workspace/assignments" | "/api/workspace/assignments/" | "/api/workspace/invitations" | "/api/workspace/invitations/" | "/api/workspace/members" | "/api/workspace/members/" | "/api/workspace/share-link" | "/api/workspace/share-link/" | "/calendar" | "/calendar/" | "/dashboard" | "/dashboard/" | "/forgotpass" | "/forgotpass/" | "/home" | "/home/" | "/join" | "/join/" | `/join/${string}` & {} | `/join/${string}/` & {} | "/kanban" | "/kanban/" | "/login" | "/login/" | "/settings" | "/settings/" | "/signup" | "/signup/" | "/tasks" | "/tasks/" | "/workspace" | "/workspace/" | `/workspace/${string}` & {} | `/workspace/${string}/` & {};
+		Pathname(): "/" | "/api" | "/api/" | "/api/ai-task" | "/api/ai-task/" | "/api/auth" | "/api/auth/" | "/api/auth/session" | "/api/auth/session/" | "/api/auth/timezone" | "/api/auth/timezone/" | "/api/calendar-ai" | "/api/calendar-ai/" | "/api/chats" | "/api/chats/" | "/api/chat" | "/api/chat/" | "/api/cron" | "/api/cron/" | "/api/cron/send-reminders" | "/api/cron/send-reminders/" | "/api/notifications" | "/api/notifications/" | "/api/pase-task-nlp" | "/api/pase-task-nlp/" | "/api/tasks" | "/api/tasks/" | "/api/tasks/update-priority" | "/api/tasks/update-priority/" | "/api/v1" | "/api/v1/" | "/api/v1/chat" | "/api/v1/chat/" | "/api/workspace" | "/api/workspace/" | "/api/workspace/activity" | "/api/workspace/activity/" | "/api/workspace/assignments" | "/api/workspace/assignments/" | "/api/workspace/invitations" | "/api/workspace/invitations/" | "/api/workspace/members" | "/api/workspace/members/" | "/api/workspace/share-link" | "/api/workspace/share-link/" | "/calendar" | "/calendar/" | "/dashboard" | "/dashboard/" | "/forgotpass" | "/forgotpass/" | "/home" | "/home/" | "/join" | "/join/" | `/join/${string}` & {} | `/join/${string}/` & {} | "/kanban" | "/kanban/" | "/login" | "/login/" | "/settings" | "/settings/" | "/signup" | "/signup/" | "/workspace" | "/workspace/" | `/workspace/${string}` & {} | `/workspace/${string}/` & {};
 		ResolvedPathname(): `${"" | `/${string}`}${ReturnType<AppTypes['Pathname']>}`;
-		Asset(): "/Ai.png" | "/background.png" | "/Bell.png" | "/Calendar.png" | "/Checkcircle.png" | "/Darkmode.png" | "/Dots.png" | "/Edit.png" | "/Events.png" | "/Expand.png" | "/favicon.png" | "/firebase-messaging-sw.js" | "/Hamburger.png" | "/Home.png" | "/iconnggoogle.webp" | "/invitebg.png" | "/invitebgdark.png" | "/Laptop.png" | "/logonamin.png" | "/logonamindarkmode.png" | "/mambou.mp3" | "/Moon.png" | "/pdf.worker.min.mjs" | "/Plus.png" | "/Profile.png" | "/Question.png" | "/Search.png" | "/Sun.png" | "/Timer.png" | "/View.png" | string & {};
+		Asset(): "/ai logo.png" | "/Ai.png" | "/background.png" | "/Bell.png" | "/Calendar.png" | "/Checkcircle.png" | "/Darkmode.png" | "/dashboard.png" | "/dashboarddark.png" | "/Dots.png" | "/Edit.png" | "/Events.png" | "/Expand.png" | "/favicon.png" | "/firebase-messaging-sw.js" | "/Hamburger.png" | "/Home.png" | "/iconnggoogle.webp" | "/invitebg.png" | "/invitebgdark.png" | "/Laptop.png" | "/logonamin.png" | "/logonamindarkmode.png" | "/mambou.mp3" | "/Moon.png" | "/pdf.worker.min.mjs" | "/Plus.png" | "/Profile.png" | "/Question.png" | "/Search.png" | "/Sun.png" | "/Timer.png" | "/View.png" | "/workspace.png" | "/workspacedark.png" | string & {};
 	}
 }

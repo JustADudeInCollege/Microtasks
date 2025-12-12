@@ -34,6 +34,9 @@
 	"/api/tasks": [
 		"src/routes/api/tasks/+server.ts"
 	],
+	"/api/tasks/update-priority": [
+		"src/routes/api/tasks/update-priority/+server.ts"
+	],
 	"/api/v1/chat": [
 		"src/routes/api/v1/chat/+server.ts"
 	],
@@ -89,10 +92,6 @@
 	],
 	"/signup": [
 		"src/routes/signup/+page.server.js",
-		"src/routes/+layout.ts"
-	],
-	"/tasks": [
-		"src/routes/tasks/+page.server.ts",
 		"src/routes/+layout.ts"
 	],
 	"/workspace": [
